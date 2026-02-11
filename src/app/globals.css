@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 10 10 15;
+    --foreground: 255 255 255;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+}
+
+@layer components {
+  /* Node executing animation */
+  .node-executing {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-background-secondary;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-border-hover rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-accent-purple;
+  }
+
+  /* React Flow custom styles */
+  .react-flow {
+    @apply bg-background;
+  }
+
+  .react-flow__background {
+    @apply bg-background;
+  }
+
+  .react-flow__node {
+    @apply border-border bg-background-secondary rounded-lg;
+  }
+
+  .react-flow__node.selected {
+    @apply border-accent-purple shadow-glow-md;
+  }
+
+  .react-flow__handle {
+    @apply bg-accent-purple border-2 border-accent-purple-dark;
+  }
+
+  .react-flow__handle-connecting {
+    @apply bg-accent-blue;
+  }
+
+  .react-flow__handle-valid {
+    @apply bg-status-success;
+  }
+
+  .react-flow__edge-path {
+    stroke-width: 2;
+  }
+
+  .react-flow__edge.selected .react-flow__edge-path {
+    stroke-width: 3;
+  }
+
+  .react-flow__controls {
+    @apply bg-background-secondary border-border;
+  }
+
+  .react-flow__controls-button {
+    @apply bg-background-tertiary border-border text-text-primary;
+  }
+
+  .react-flow__controls-button:hover {
+    @apply bg-background-secondary;
+  }
+
+  .react-flow__minimap {
+    @apply bg-background-secondary border border-border rounded-lg;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

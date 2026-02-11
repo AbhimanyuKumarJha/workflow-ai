@@ -1,0 +1,203 @@
+// schema.prisma
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ===== Enums =====
+
+enum NodeType {
+  TEXT
+  UPLOAD_IMAGE
+  UPLOAD_VIDEO
+  LLM
+  CROP_IMAGE
+  EXTRACT_FRAME
+}
+
+enum RunScope {
+  FULL
+  SELECTED
+  SINGLE
+}
+
+enum RunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+enum NodeStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum AssetType {
+  IMAGE
+  VIDEO
+}
+
+// ===== Models =====
+
+model User {
+  id          String   @id @default(cuid())
+  clerkUserId String   @unique
+
+  email       String?
+  name        String?
+  imageUrl    String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workflows   Workflow[]
+  runs        WorkflowRun[]
+  assets      Asset[]
+  workflowVersions WorkflowVersion[] @relation("VersionCreator")
+}
+
+model Workflow {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  name        String   @default("Untitled workflow")
+  description String?
+  isArchived  Boolean  @default(false)
+
+  // Used to generate per-workflow Run #123
+  runCounter  Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions    WorkflowVersion[]
+  runs        WorkflowRun[]
+
+  @@index([ownerId, updatedAt])
+}
+
+model WorkflowVersion {
+  id           String   @id @default(cuid())
+  workflowId   String
+  workflow     Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  // Incrementing version number per workflow (1,2,3...)
+  version      Int
+
+  // React Flow snapshot (pixel-perfect restore)
+  nodes        Json     // Node[] (id, type, position, data...)
+  edges        Json     // Edge[] (id, source, target, handles...)
+  viewport     Json?    // { x: number, y: number, zoom: number }
+
+  createdAt    DateTime @default(now())
+  createdById  String?
+  createdBy    User?    @relation("VersionCreator", fields: [createdById], references: [id])
+
+  runs         WorkflowRun[]
+
+  @@unique([workflowId, version])
+  @@index([workflowId, createdAt])
+}
+
+model WorkflowRun {
+  id               String         @id @default(cuid())
+  workflowId        String
+  workflow          Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  // Freeze what graph was executed
+  workflowVersionId String
+  workflowVersion   WorkflowVersion @relation(fields: [workflowVersionId], references: [id])
+
+  userId            String
+  user              User           @relation(fields: [userId], references: [id])
+
+  // Run #123 (per workflow)
+  runNumber         Int
+
+  scope             RunScope
+  status            RunStatus      @default(RUNNING)
+
+  startedAt         DateTime       @default(now())
+  finishedAt        DateTime?
+  durationMs        Int?
+
+  // For SELECTED/SINGLE runs:
+  selectedNodeIds   String[]       @db.Text
+
+  // Friendly summary for sidebar
+  errorSummary      String?
+
+  // Anything extra (e.g., orchestration metadata)
+  metadata          Json?
+
+  nodeRuns          NodeRun[]
+
+  @@unique([workflowId, runNumber])
+  @@index([workflowId, startedAt])
+  @@index([userId, startedAt])
+}
+
+model NodeRun {
+  id            String      @id @default(cuid())
+  workflowRunId String
+  workflowRun   WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+
+  // React Flow node.id (e.g. "node-4")
+  nodeId        String
+  nodeType      NodeType
+
+  status        NodeStatus  @default(QUEUED)
+
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  durationMs    Int?
+
+  // Inputs actually used (after chaining + resolved connections)
+  inputs        Json?
+  // Outputs produced (URLs, LLM text, etc.)
+  outputs       Json?
+
+  // Error info
+  errorMessage  String?
+  errorDetails  Json?
+
+  // Trigger.dev correlation
+  taskName      String?
+  triggerRunId  String?
+
+  @@index([workflowRunId, nodeId])
+  @@index([workflowRunId, status])
+}
+
+model Asset {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type        AssetType
+  url         String
+
+  // transloadit / other provider info
+  provider    String    @default("transloadit")
+  assemblyId  String?
+  mimeType    String?
+  bytes       Int?
+  width       Int?
+  height      Int?
+  durationMs  Int?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@unique([provider, url])
+}
