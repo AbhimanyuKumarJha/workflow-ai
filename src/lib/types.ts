@@ -12,10 +12,10 @@ export interface HandleConfig {
 }
 
 // ===== Node Data Types =====
-export interface BaseNodeData {
+export interface BaseNodeData extends Record<string, unknown> {
     label: string;
     isExecuting?: boolean;
-    lastResult?: any;
+    lastResult?: unknown;
     error?: string;
 }
 
@@ -62,13 +62,15 @@ export interface ExtractFrameNodeData extends BaseNodeData {
     extractedFrameUrl?: string;
 }
 
-export type CustomNodeData =
-    | TextNodeData
-    | UploadImageNodeData
-    | UploadVideoNodeData
-    | LLMNodeData
-    | CropImageNodeData
-    | ExtractFrameNodeData;
+export type CustomNodeData = Record<string, unknown> &
+    (
+        | TextNodeData
+        | UploadImageNodeData
+        | UploadVideoNodeData
+        | LLMNodeData
+        | CropImageNodeData
+        | ExtractFrameNodeData
+    );
 
 export type CustomNode = Node<CustomNodeData>;
 export type CustomEdge = Edge;
@@ -83,7 +85,7 @@ export interface WorkflowSnapshot {
 export interface InputResolution {
     nodeId: string;
     handleId: string;
-    value: any;
+    value: unknown;
     source: 'connection' | 'manual';
 }
 
@@ -98,7 +100,7 @@ export interface ExecutionContext {
 export interface NodeExecutionResult {
     nodeId: string;
     success: boolean;
-    outputs?: Record<string, any>;
+    outputs?: Record<string, unknown>;
     error?: string;
     durationMs?: number;
 }
