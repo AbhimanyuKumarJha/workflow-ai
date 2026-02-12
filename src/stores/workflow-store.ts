@@ -10,6 +10,10 @@ import {
     Viewport,
 } from '@xyflow/react';
 import { CustomNodeData, WorkflowSnapshot } from '@/lib/types';
+import { getHandleDataType } from '@/lib/handle-registry';
+
+// Debounce timer for history updates
+let historyTimeout: NodeJS.Timeout | null = null;
 
 interface HistoryState {
     past: WorkflowSnapshot[];
@@ -100,6 +104,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     },
 
     onConnect: (connection) => {
+        const { nodes } = get();
+
+        // Find source node to determine data type
+        const sourceNode = nodes.find((n) => n.id === connection.source);
+        const dataType = sourceNode
+            ? getHandleDataType(sourceNode.type!, connection.sourceHandle || '')
+            : undefined;
+
         const newEdge: Edge = {
             id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
             source: connection.source!,
@@ -107,6 +119,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             sourceHandle: connection.sourceHandle,
             targetHandle: connection.targetHandle,
             type: 'custom',
+            data: { dataType },
         };
 
         set((state) => ({
@@ -188,17 +201,25 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     },
 
     addToHistory: () => {
-        const { nodes, edges, viewport, history } = get();
-        const snapshot: WorkflowSnapshot = { nodes, edges, viewport };
+        // Clear existing timeout
+        if (historyTimeout) {
+            clearTimeout(historyTimeout);
+        }
 
-        // Debounce history updates to avoid excessive snapshots
-        set({
-            history: {
-                past: [...history.past, history.present],
-                present: snapshot,
-                future: [], // Clear future on new action
-            },
-        });
+        // Debounce history saves by 300ms
+        historyTimeout = setTimeout(() => {
+            const { nodes, edges, viewport, history } = get();
+            const snapshot: WorkflowSnapshot = { nodes, edges, viewport };
+
+            set({
+                history: {
+                    past: [...history.past, history.present],
+                    present: snapshot,
+                    future: [], // Clear future on new action
+                },
+            });
+            historyTimeout = null;
+        }, 300);
     },
 
     // Workflow persistence

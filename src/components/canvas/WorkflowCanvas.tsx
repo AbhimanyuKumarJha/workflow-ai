@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import {
     ReactFlow,
     Background,
@@ -19,20 +19,14 @@ import { useUIStore } from '@/stores/ui-store';
 import { CustomEdge } from './CustomEdge';
 import { CustomNodeData } from '@/lib/types';
 import { toast } from 'sonner';
-
-// Placeholder node components - will be replaced in Phase 3
-function PlaceholderNode({ data }: { data: { label?: string } }) {
-    return (
-        <div className="px-4 py-3 bg-gray-800 border-2 border-gray-700 rounded-lg min-w-[200px]">
-            <div className="text-white font-medium mb-2">{data.label}</div>
-            <div className="text-gray-400 text-xs">Phase 3 implementation</div>
-        </div>
-    );
-}
+import { nodeTypes } from '@/components/nodes';
+import { areHandlesCompatible, getDataTypeLabel, getHandleDataType } from '@/lib/handle-registry';
+import { Maximize2 } from 'lucide-react';
 
 function WorkflowCanvasInner() {
     const reactFlowInstance = useReactFlow();
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
+    const [hasInitialized, setHasInitialized] = useState(false);
 
     // Workflow store
     const nodes = useWorkflowStore((state) => state.nodes);
@@ -50,36 +44,49 @@ function WorkflowCanvasInner() {
     // UI store
     const clearSelection = useUIStore((state) => state.clearSelection);
 
-    // Node types - using placeholders for Phase 2
-    const nodeTypes = useMemo(
-        () => ({
-            text: PlaceholderNode,
-            upload_image: PlaceholderNode,
-            upload_video: PlaceholderNode,
-            llm: PlaceholderNode,
-            crop_image: PlaceholderNode,
-            extract_frame: PlaceholderNode,
-        }),
-        []
-    );
+    // Node types - imported from components/nodes
+    const memoizedNodeTypes = useMemo(() => nodeTypes, []);
 
     // Edge types
-    const edgeTypes = useMemo(() => ({ custom: CustomEdge }), []);
+    const edgeTypes = useMemo(() => ({ custom: CustomEdge as any }), []);
 
     // Get default node data based on type
-    const getDefaultNodeData = useCallback((type: string) => {
-        const labels: Record<string, string> = {
-            text: 'Text Node',
-            upload_image: 'Upload Image',
-            upload_video: 'Upload Video',
-            llm: 'Run Any LLM',
-            crop_image: 'Crop Image',
-            extract_frame: 'Extract Frame',
-        };
+    const getDefaultNodeData = useCallback((type: string): CustomNodeData => {
+        const baseData = { label: '' };
 
-        return {
-            label: labels[type] || 'Unknown Node',
-        };
+        switch (type) {
+            case 'text':
+                return { ...baseData, label: 'Text Node', value: '' };
+            case 'upload_image':
+                return { ...baseData, label: 'Upload Image' };
+            case 'upload_video':
+                return { ...baseData, label: 'Upload Video' };
+            case 'llm':
+                return {
+                    ...baseData,
+                    label: 'Run Any LLM',
+                    selectedModel: 'gemini-2.0-flash-exp',
+                    systemPrompt: '',
+                    userMessage: '',
+                };
+            case 'crop_image':
+                return {
+                    ...baseData,
+                    label: 'Crop Image',
+                    xPercent: 0,
+                    yPercent: 0,
+                    widthPercent: 100,
+                    heightPercent: 100,
+                };
+            case 'extract_frame':
+                return {
+                    ...baseData,
+                    label: 'Extract Frame',
+                    timestamp: 0,
+                };
+            default:
+                return { ...baseData, label: 'Unknown Node' };
+        }
     }, []);
 
     // Drag & Drop handler
@@ -106,11 +113,12 @@ function WorkflowCanvasInner() {
         [reactFlowInstance, addNode, getDefaultNodeData]
     );
 
-    // Connection validation
+    // Connection validation with type checking
     const isValidConnection = useCallback(
         (connection: Connection | Edge) => {
             const conn = connection as Connection;
-            // Basic validation - will be enhanced in Phase 3 with type checking
+
+            // Prevent self-connections
             if (conn.source === conn.target) {
                 toast.error('Cannot connect a node to itself');
                 return false;
@@ -130,9 +138,60 @@ function WorkflowCanvasInner() {
                 return false;
             }
 
+            // Type compatibility check
+            const sourceNode = nodes.find((n) => n.id === conn.source);
+            const targetNode = nodes.find((n) => n.id === conn.target);
+
+            if (!sourceNode || !targetNode) {
+                return false;
+            }
+
+            const compatible = areHandlesCompatible(
+                sourceNode.type!,
+                conn.sourceHandle || '',
+                targetNode.type!,
+                conn.targetHandle || ''
+            );
+
+            if (!compatible) {
+                const sourceType = getHandleDataType(sourceNode.type!, conn.sourceHandle || '');
+                const targetType = getHandleDataType(targetNode.type!, conn.targetHandle || '');
+
+                if (sourceType && targetType) {
+                    toast.error(
+                        `Cannot connect ${getDataTypeLabel(sourceType)} to ${getDataTypeLabel(targetType)}`
+                    );
+                }
+                return false;
+            }
+
+            // Basic cycle detection - prevent direct loops
+            const wouldCreateCycle = (source: string, target: string): boolean => {
+                const visited = new Set<string>();
+                const stack = [target];
+
+                while (stack.length > 0) {
+                    const current = stack.pop()!;
+                    if (current === source) return true;
+                    if (visited.has(current)) continue;
+                    visited.add(current);
+
+                    edges
+                        .filter((e) => e.source === current)
+                        .forEach((e) => stack.push(e.target));
+                }
+
+                return false;
+            };
+
+            if (wouldCreateCycle(conn.source!, conn.target!)) {
+                toast.error('Cannot create circular dependencies');
+                return false;
+            }
+
             return true;
         },
-        [edges]
+        [edges, nodes]
     );
 
     // Delete selected nodes on Delete/Backspace
@@ -142,6 +201,12 @@ function WorkflowCanvasInner() {
         },
         [deleteNode]
     );
+
+    // Manual center view handler
+    const handleCenterView = useCallback(() => {
+        reactFlowInstance.fitView({ padding: 0.2, duration: 300 });
+        toast.success('Centered view');
+    }, [reactFlowInstance]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -204,6 +269,12 @@ function WorkflowCanvasInner() {
                     nodes.map((node) => ({ ...node, selected: false }))
                 );
             }
+
+            // Ctrl/Cmd + 0: Center View
+            if ((event.ctrlKey || event.metaKey) && event.key === '0') {
+                event.preventDefault();
+                handleCenterView();
+            }
         };
 
         document.addEventListener('keydown', handleKeyDown);
@@ -216,16 +287,18 @@ function WorkflowCanvasInner() {
         clearSelection,
         nodes,
         reactFlowInstance,
+        handleCenterView,
     ]);
 
-    // Fit view on mount
+    // One-time initialization - fit view only when loading a saved workflow
     useEffect(() => {
-        if (nodes.length > 0) {
+        if (!hasInitialized && nodes.length > 0) {
             setTimeout(() => {
-                reactFlowInstance.fitView({ padding: 0.2, duration: 500 });
-            }, 100);
+                reactFlowInstance.fitView({ padding: 0.2, duration: 0 });
+                setHasInitialized(true);
+            }, 50);
         }
-    }, [nodes.length, reactFlowInstance]);
+    }, [hasInitialized, nodes.length, reactFlowInstance]);
 
     return (
         <div ref={reactFlowWrapper} className="w-full h-full">
@@ -239,9 +312,8 @@ function WorkflowCanvasInner() {
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 isValidConnection={isValidConnection}
-                nodeTypes={nodeTypes}
+                nodeTypes={memoizedNodeTypes}
                 edgeTypes={edgeTypes}
-                fitView
                 defaultEdgeOptions={{
                     type: 'custom',
                     animated: true,
@@ -286,9 +358,20 @@ function WorkflowCanvasInner() {
                                 return '#6b7280';
                         }
                     }}
-                    className="!bg-gray-800 !border-gray-700"
+                    style={{ backgroundColor: 'rgb(31, 41, 55)', borderColor: 'rgb(55, 65, 81)' }}
                     maskColor="rgba(0, 0, 0, 0.6)"
                 />
+                {/* Center View Button */}
+                <Panel position="top-left" className="m-2">
+                    <button
+                        onClick={handleCenterView}
+                        className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg"
+                        title="Center and fit all nodes in view (Ctrl+0)"
+                    >
+                        <Maximize2 className="w-4 h-4" />
+                        Center View
+                    </button>
+                </Panel>
                 <Panel position="top-right" className="bg-gray-800 border border-gray-700 rounded-lg p-2 m-2">
                     <div className="text-xs text-gray-400 space-y-1">
                         <div className="flex items-center gap-2">
