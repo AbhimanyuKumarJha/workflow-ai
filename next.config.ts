@@ -13,9 +13,7 @@ const nextConfig: NextConfig = {
             },
         ],
     },
-    experimental: {
-        serverComponentsExternalPackages: ['@trigger.dev/sdk'],
-    },
+    serverExternalPackages: ['@trigger.dev/sdk'],
 };
 
 export default nextConfig;

@@ -3,6 +3,7 @@ import { ffmpeg } from "@trigger.dev/build/extensions/core";
 
 export default defineConfig({
     project: "<your-project-ref>",
+    maxDuration: 3600,
     // Your other config settings...
     retries: {
         enabledInDev: true,
