@@ -1,38 +1,54 @@
-'use client';
+﻿'use client';
 
+import { useState } from 'react';
 import { UserButton } from '@clerk/nextjs';
-import { Save, Download, Upload, Play, PanelLeftClose, PanelRightClose } from 'lucide-react';
+import {
+    Download,
+    FlaskConical,
+    PanelLeftClose,
+    PanelRightClose,
+    Play,
+    Save,
+    Upload,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import { useUIStore } from '@/stores/ui-store';
-import { toast } from 'sonner';
-import { useState } from 'react';
+import { sampleWorkflow } from '@/lib/sample-workflow';
+import { useHistoryStore } from '@/stores/history-store';
 
 export function Header() {
+    const workflowId = useWorkflowStore((state) => state.workflowId);
     const workflowName = useWorkflowStore((state) => state.workflowName);
     const setWorkflowName = useWorkflowStore((state) => state.setWorkflowName);
     const saveWorkflow = useWorkflowStore((state) => state.saveWorkflow);
     const exportJSON = useWorkflowStore((state) => state.exportJSON);
     const importJSON = useWorkflowStore((state) => state.importJSON);
+    const applySnapshot = useWorkflowStore((state) => state.applySnapshot);
     const nodes = useWorkflowStore((state) => state.nodes);
+    const isSaving = useWorkflowStore((state) => state.isSaving);
 
     const leftSidebarOpen = useUIStore((state) => state.leftSidebarOpen);
     const rightSidebarOpen = useUIStore((state) => state.rightSidebarOpen);
     const toggleLeftSidebar = useUIStore((state) => state.toggleLeftSidebar);
     const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
 
+    const addRun = useHistoryStore((state) => state.addRun);
+    const setActiveRunId = useHistoryStore((state) => state.setActiveRunId);
+    const fetchHistory = useHistoryStore((state) => state.fetchHistory);
+
     const [isEditingName, setIsEditingName] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
+    const [isExecuting, setIsExecuting] = useState(false);
 
     const handleSave = async () => {
-        setIsSaving(true);
         try {
-            await saveWorkflow();
-            toast.success('Workflow saved successfully');
-        } catch (error) {
-            toast.error('Failed to save workflow');
-            console.error(error);
-        } finally {
-            setIsSaving(false);
+            await toast.promise(saveWorkflow(), {
+                loading: 'Saving workflow...',
+                success: 'Workflow saved',
+                error: 'Failed to save workflow',
+            });
+        } catch {
+            // handled via toast.promise
         }
     };
 
@@ -41,17 +57,16 @@ export function Header() {
             const json = exportJSON();
             const blob = new Blob([json], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${workflowName}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `${workflowName || 'workflow'}.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
             URL.revokeObjectURL(url);
-            toast.success('Workflow exported successfully');
-        } catch (error) {
+            toast.success('Workflow exported');
+        } catch {
             toast.error('Failed to export workflow');
-            console.error(error);
         }
     };
 
@@ -59,36 +74,100 @@ export function Header() {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'application/json';
-        input.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
+
+        input.onchange = async (event) => {
+            const file = (event.target as HTMLInputElement).files?.[0];
+            if (!file) {
+                return;
+            }
 
             try {
                 const text = await file.text();
                 importJSON(text);
-                toast.success('Workflow imported successfully');
-            } catch (error) {
-                toast.error('Failed to import workflow');
-                console.error(error);
+                toast.success('Workflow imported');
+            } catch {
+                toast.error('Failed to import workflow JSON');
             }
         };
+
         input.click();
+    };
+
+    const handleLoadSample = () => {
+        applySnapshot(sampleWorkflow, {
+            name: 'Product Marketing Kit Generator',
+            markDirty: true,
+        });
+        toast.success('Sample workflow loaded');
     };
 
     const handleExecute = async () => {
         if (nodes.length === 0) {
-            toast.error('No nodes to execute');
+            toast.error('Add at least one node before running');
             return;
         }
 
-        toast.info('Workflow execution coming in Phase 5');
+        setIsExecuting(true);
+
+        try {
+            let targetWorkflowId = workflowId;
+            if (!targetWorkflowId) {
+                await saveWorkflow();
+                targetWorkflowId = useWorkflowStore.getState().workflowId;
+            }
+
+            if (!targetWorkflowId) {
+                throw new Error('Workflow must be saved before execution');
+            }
+
+            const response = await fetch('/api/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    workflowId: targetWorkflowId,
+                    scope: 'FULL',
+                }),
+            });
+
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                      error?: string;
+                      runId?: string;
+                      runNumber?: number;
+                      run?: Parameters<typeof addRun>[0];
+                  }
+                | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.error ?? 'Execution failed');
+            }
+
+            if (payload?.run) {
+                addRun(payload.run);
+            }
+
+            if (payload?.runId) {
+                setActiveRunId(payload.runId);
+            }
+
+            await fetchHistory(targetWorkflowId);
+            toast.success(
+                payload?.runNumber
+                    ? `Run #${payload.runNumber} started`
+                    : 'Workflow execution started'
+            );
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to execute workflow');
+        } finally {
+            setIsExecuting(false);
+        }
     };
 
     return (
         <header className="h-16 border-b border-gray-800 bg-gray-900 flex items-center justify-between px-4">
-            {/* Left section - Logo and Workflow Name */}
-            <div className="flex items-center gap-4">
-                {/* Toggle Left Sidebar */}
+            <div className="flex items-center gap-4 min-w-0">
                 <button
                     onClick={toggleLeftSidebar}
                     className="p-2 hover:bg-gray-800 rounded transition-colors"
@@ -100,35 +179,33 @@ export function Header() {
                     />
                 </button>
 
-                {/* Logo */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                     <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center">
                         <span className="text-white font-bold text-lg">W</span>
                     </div>
-                    <span className="text-xl font-bold text-white hidden sm:block">
-                        Weavy
-                    </span>
+                    <span className="text-xl font-bold text-white hidden sm:block">Weavy</span>
                 </div>
 
-                {/* Workflow Name */}
-                <div className="ml-4">
+                <div className="min-w-0">
                     {isEditingName ? (
                         <input
                             type="text"
                             value={workflowName}
-                            onChange={(e) => setWorkflowName(e.target.value)}
+                            onChange={(event) => setWorkflowName(event.target.value)}
                             onBlur={() => setIsEditingName(false)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') setIsEditingName(false);
-                                if (e.key === 'Escape') setIsEditingName(false);
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === 'Escape') {
+                                    setIsEditingName(false);
+                                }
                             }}
                             autoFocus
-                            className="bg-gray-800 text-white px-3 py-1 rounded border border-gray-700 focus:outline-none focus:border-purple-500"
+                            className="bg-gray-800 text-white px-3 py-1 rounded border border-gray-700 focus:outline-none focus:border-purple-500 w-64 max-w-[45vw]"
                         />
                     ) : (
                         <button
                             onClick={() => setIsEditingName(true)}
-                            className="text-white hover:text-purple-400 transition-colors px-3 py-1 hover:bg-gray-800 rounded"
+                            className="text-white hover:text-purple-300 transition-colors px-3 py-1 hover:bg-gray-800 rounded truncate max-w-[45vw]"
+                            title={workflowName}
                         >
                             {workflowName}
                         </button>
@@ -136,53 +213,55 @@ export function Header() {
                 </div>
             </div>
 
-            {/* Center section - Action buttons */}
             <div className="flex items-center gap-2">
-                {/* Save Button */}
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded transition-colors"
+                    className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded transition-colors"
                     title="Save workflow (Ctrl+S)"
                 >
                     <Save size={16} />
-                    <span className="hidden sm:inline">
-                        {isSaving ? 'Saving...' : 'Save'}
-                    </span>
+                    <span className="hidden sm:inline">{isSaving ? 'Saving...' : 'Save'}</span>
                 </button>
 
-                {/* Export Button */}
+                <button
+                    onClick={handleLoadSample}
+                    className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
+                    title="Load sample workflow"
+                >
+                    <FlaskConical size={16} />
+                    <span className="hidden sm:inline">Sample</span>
+                </button>
+
                 <button
                     onClick={handleExport}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
                     title="Export workflow (Ctrl+E)"
                 >
                     <Download size={16} />
                     <span className="hidden sm:inline">Export</span>
                 </button>
 
-                {/* Import Button */}
                 <button
                     onClick={handleImport}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
                     title="Import workflow"
                 >
                     <Upload size={16} />
                     <span className="hidden sm:inline">Import</span>
                 </button>
 
-                {/* Execute Button */}
                 <button
                     onClick={handleExecute}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                    disabled={isExecuting}
+                    className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded transition-colors"
                     title="Execute workflow"
                 >
                     <Play size={16} />
-                    <span className="hidden sm:inline">Run</span>
+                    <span className="hidden sm:inline">{isExecuting ? 'Running...' : 'Run'}</span>
                 </button>
             </div>
 
-            {/* Right section - User button and toggle */}
             <div className="flex items-center gap-2">
                 <UserButton
                     appearance={{
@@ -192,7 +271,6 @@ export function Header() {
                     }}
                 />
 
-                {/* Toggle Right Sidebar */}
                 <button
                     onClick={toggleRightSidebar}
                     className="p-2 hover:bg-gray-800 rounded transition-colors"
@@ -207,3 +285,4 @@ export function Header() {
         </header>
     );
 }
+
