@@ -19,7 +19,7 @@ export function CustomEdge({
     markerEnd,
     selected,
     data,
-}: EdgeProps<CustomEdgeData>) {
+}: EdgeProps) {
     const [edgePath] = getBezierPath({
         sourceX,
         sourceY,
@@ -30,7 +30,7 @@ export function CustomEdge({
     });
 
     // Get color scheme based on data type
-    const dataType = data?.dataType || 'text';
+    const dataType = (data as CustomEdgeData | undefined)?.dataType || 'text';
     const colorSchemes = {
         text: {
             start: '#3b82f6',

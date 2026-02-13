@@ -12,6 +12,7 @@ import {
     Panel,
     Edge,
     Node,
+    EdgeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useWorkflowStore } from '@/stores/workflow-store';
@@ -22,6 +23,7 @@ import { toast } from 'sonner';
 import { nodeTypes } from '@/components/nodes';
 import { areHandlesCompatible, getDataTypeLabel, getHandleDataType } from '@/lib/handle-registry';
 import { Maximize2 } from 'lucide-react';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 function WorkflowCanvasInner() {
     const reactFlowInstance = useReactFlow();
@@ -40,6 +42,8 @@ function WorkflowCanvasInner() {
     const redo = useWorkflowStore((state) => state.redo);
     const saveWorkflow = useWorkflowStore((state) => state.saveWorkflow);
     const exportJSON = useWorkflowStore((state) => state.exportJSON);
+    const setViewport = useWorkflowStore((state) => state.setViewport);
+    const viewport = useWorkflowStore((state) => state.viewport);
 
     // UI store
     const clearSelection = useUIStore((state) => state.clearSelection);
@@ -48,7 +52,7 @@ function WorkflowCanvasInner() {
     const memoizedNodeTypes = useMemo(() => nodeTypes, []);
 
     // Edge types
-    const edgeTypes = useMemo(() => ({ custom: CustomEdge as any }), []);
+    const edgeTypes = useMemo<EdgeTypes>(() => ({ custom: CustomEdge }), []);
 
     // Get default node data based on type
     const getDefaultNodeData = useCallback((type: string): CustomNodeData => {
@@ -111,6 +115,13 @@ function WorkflowCanvasInner() {
             toast.success(`Added ${getDefaultNodeData(nodeType).label}`);
         },
         [reactFlowInstance, addNode, getDefaultNodeData]
+    );
+
+    const onMoveEnd = useCallback(
+        (_event: MouseEvent | TouchEvent | null, viewport: { x: number; y: number; zoom: number }) => {
+            setViewport(viewport);
+        },
+        [setViewport]
     );
 
     // Connection validation with type checking
@@ -208,97 +219,110 @@ function WorkflowCanvasInner() {
         toast.success('Centered view');
     }, [reactFlowInstance]);
 
-    // Keyboard shortcuts
-    useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            // Ctrl/Cmd + S: Save
-            if ((event.ctrlKey || event.metaKey) && event.key === 's') {
-                event.preventDefault();
-                toast.promise(saveWorkflow(), {
-                    loading: 'Saving workflow...',
-                    success: 'Workflow saved!',
-                    error: 'Failed to save workflow',
-                });
-            }
-
-            // Ctrl/Cmd + E: Export
-            if ((event.ctrlKey || event.metaKey) && event.key === 'e') {
-                event.preventDefault();
-                const json = exportJSON();
-                const blob = new Blob([json], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'workflow.json';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                toast.success('Workflow exported');
-            }
-
-            // Ctrl/Cmd + Z: Undo
-            if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
-                event.preventDefault();
-                undo();
-                toast.info('Undo');
-            }
-
-            // Ctrl/Cmd + Y or Ctrl/Cmd + Shift + Z: Redo
-            if (
-                (event.ctrlKey || event.metaKey) &&
-                (event.key === 'y' || (event.key === 'z' && event.shiftKey))
-            ) {
-                event.preventDefault();
-                redo();
-                toast.info('Redo');
-            }
-
-            // Ctrl/Cmd + A: Select all nodes
-            if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
-                event.preventDefault();
-                reactFlowInstance.setNodes(
-                    nodes.map((node) => ({ ...node, selected: true }))
-                );
-            }
-
-            // Escape: Clear selection
-            if (event.key === 'Escape') {
-                clearSelection();
-                reactFlowInstance.setNodes(
-                    nodes.map((node) => ({ ...node, selected: false }))
-                );
-            }
-
-            // Ctrl/Cmd + 0: Center View
-            if ((event.ctrlKey || event.metaKey) && event.key === '0') {
-                event.preventDefault();
-                handleCenterView();
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [
-        saveWorkflow,
-        exportJSON,
-        undo,
-        redo,
-        clearSelection,
-        nodes,
-        reactFlowInstance,
-        handleCenterView,
-    ]);
+    useKeyboardShortcuts({
+        'ctrl+s': (event) => {
+            event.preventDefault();
+            toast.promise(saveWorkflow(), {
+                loading: 'Saving workflow...',
+                success: 'Workflow saved!',
+                error: 'Failed to save workflow',
+            });
+        },
+        'meta+s': (event) => {
+            event.preventDefault();
+            toast.promise(saveWorkflow(), {
+                loading: 'Saving workflow...',
+                success: 'Workflow saved!',
+                error: 'Failed to save workflow',
+            });
+        },
+        'ctrl+e': (event) => {
+            event.preventDefault();
+            const json = exportJSON();
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = 'workflow.json';
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+            toast.success('Workflow exported');
+        },
+        'meta+e': (event) => {
+            event.preventDefault();
+            const json = exportJSON();
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = 'workflow.json';
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+            toast.success('Workflow exported');
+        },
+        'ctrl+z': (event) => {
+            event.preventDefault();
+            undo();
+            toast.info('Undo');
+        },
+        'meta+z': (event) => {
+            event.preventDefault();
+            undo();
+            toast.info('Undo');
+        },
+        'ctrl+y': (event) => {
+            event.preventDefault();
+            redo();
+            toast.info('Redo');
+        },
+        'meta+shift+z': (event) => {
+            event.preventDefault();
+            redo();
+            toast.info('Redo');
+        },
+        'ctrl+a': (event) => {
+            event.preventDefault();
+            reactFlowInstance.setNodes(nodes.map((node) => ({ ...node, selected: true })));
+        },
+        'meta+a': (event) => {
+            event.preventDefault();
+            reactFlowInstance.setNodes(nodes.map((node) => ({ ...node, selected: true })));
+        },
+        escape: () => {
+            clearSelection();
+            reactFlowInstance.setNodes(nodes.map((node) => ({ ...node, selected: false })));
+        },
+        'ctrl+0': (event) => {
+            event.preventDefault();
+            handleCenterView();
+        },
+        'meta+0': (event) => {
+            event.preventDefault();
+            handleCenterView();
+        },
+    });
 
     // One-time initialization - fit view only when loading a saved workflow
     useEffect(() => {
         if (!hasInitialized && nodes.length > 0) {
             setTimeout(() => {
-                reactFlowInstance.fitView({ padding: 0.2, duration: 0 });
+                const hasStoredViewport =
+                    viewport.zoom !== 1 || viewport.x !== 0 || viewport.y !== 0;
+
+                if (hasStoredViewport) {
+                    reactFlowInstance.setViewport(viewport, { duration: 0 });
+                } else {
+                    reactFlowInstance.fitView({ padding: 0.2, duration: 0 });
+                }
+
                 setHasInitialized(true);
             }, 50);
         }
-    }, [hasInitialized, nodes.length, reactFlowInstance]);
+    }, [hasInitialized, nodes.length, reactFlowInstance, viewport]);
 
     return (
         <div ref={reactFlowWrapper} className="w-full h-full">
@@ -311,6 +335,7 @@ function WorkflowCanvasInner() {
                 onNodesDelete={onNodesDelete}
                 onDrop={onDrop}
                 onDragOver={onDragOver}
+                onMoveEnd={onMoveEnd}
                 isValidConnection={isValidConnection}
                 nodeTypes={memoizedNodeTypes}
                 edgeTypes={edgeTypes}
