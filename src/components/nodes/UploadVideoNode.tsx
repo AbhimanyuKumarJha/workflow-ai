@@ -34,7 +34,7 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
                     mimeType: file.type,
                 });
                 setIsUploading(false);
-            } catch (error) {
+            } catch {
                 updateNodeData(id, { error: 'Failed to upload video' });
                 setIsUploading(false);
             }
