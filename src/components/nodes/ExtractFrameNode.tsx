@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback } from 'react';
 import { NodeProps, Position } from '@xyflow/react';
@@ -7,20 +7,21 @@ import { BaseNode, CustomHandle } from './BaseNode';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import { useUIStore } from '@/stores/ui-store';
 import { ExtractFrameNodeData } from '@/lib/types';
+import { toast } from 'sonner';
+import { useHistoryStore } from '@/stores/history-store';
 
 export function ExtractFrameNode({ id, data, selected }: NodeProps) {
     const nodeData = data as ExtractFrameNodeData;
     const edges = useWorkflowStore((state) => state.edges);
+    const workflowId = useWorkflowStore((state) => state.workflowId);
     const updateNodeData = useWorkflowStore((state) => state.updateNodeData);
     const executingNodes = useUIStore((state) => state.executingNodes);
+    const addRun = useHistoryStore((state) => state.addRun);
+    const fetchHistory = useHistoryStore((state) => state.fetchHistory);
+    const setActiveRunId = useHistoryStore((state) => state.setActiveRunId);
 
-    // Check which handles are connected
-    const videoConnected = edges.some(
-        (e) => e.target === id && e.targetHandle === 'video_url'
-    );
-    const timestampConnected = edges.some(
-        (e) => e.target === id && e.targetHandle === 'timestamp'
-    );
+    const videoConnected = edges.some((e) => e.target === id && e.targetHandle === 'video_url');
+    const timestampConnected = edges.some((e) => e.target === id && e.targetHandle === 'timestamp');
 
     const isExecuting = nodeData.isExecuting || executingNodes.has(id);
 
@@ -31,26 +32,89 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
         [id, updateNodeData]
     );
 
-    const handleRun = useCallback(() => {
-        // This will be implemented in Phase 5 with Trigger.dev
+    const handleRun = useCallback(async () => {
+        if (!workflowId) {
+            toast.error('Save the workflow before executing a node');
+            return;
+        }
+
         updateNodeData(id, {
             isExecuting: true,
             error: undefined,
         });
 
-        // Simulate execution
-        setTimeout(() => {
+        try {
+            const response = await fetch('/api/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    workflowId,
+                    scope: 'SINGLE',
+                    selectedNodeIds: [id],
+                }),
+            });
+
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                      error?: string;
+                      runId?: string;
+                      run?: {
+                          nodeRuns?: Array<{
+                              nodeId: string;
+                              outputs?: Record<string, unknown>;
+                              errorMessage?: string | null;
+                          }>;
+                      };
+                  }
+                | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.error ?? 'Node execution failed');
+            }
+
+            if (payload?.run) {
+                addRun(payload.run as Parameters<typeof addRun>[0]);
+            }
+            if (payload?.runId) {
+                setActiveRunId(payload.runId);
+            }
+            await fetchHistory(workflowId);
+
+            const nodeRun = payload?.run?.nodeRuns?.find((run) => run.nodeId === id);
+            const frameUrl =
+                typeof nodeRun?.outputs?.frameUrl === 'string'
+                    ? nodeRun.outputs.frameUrl
+                    : typeof nodeRun?.outputs?.extractedFrameUrl === 'string'
+                    ? nodeRun.outputs.extractedFrameUrl
+                    : undefined;
+
             updateNodeData(id, {
                 isExecuting: false,
-                // Placeholder - would be actual extracted frame
-                extractedFrameUrl: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120"><rect fill="%23374151" width="200" height="120"/><text x="50%" y="50%" fill="%239CA3AF" text-anchor="middle" dy=".3em" font-size="12">Frame extracted</text></svg>',
+                extractedFrameUrl: frameUrl ?? nodeData.extractedFrameUrl,
+                error: nodeRun?.errorMessage ?? undefined,
             });
-        }, 1000);
-    }, [id, updateNodeData]);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Node execution failed';
+            updateNodeData(id, {
+                isExecuting: false,
+                error: message,
+            });
+            toast.error(message);
+        }
+    }, [
+        workflowId,
+        id,
+        updateNodeData,
+        addRun,
+        setActiveRunId,
+        fetchHistory,
+        nodeData.extractedFrameUrl,
+    ]);
 
     const canRun = !isExecuting && (videoConnected || nodeData.videoUrl);
 
-    // Parse timestamp for display
     const formatTimestamp = (ts: string | number | undefined) => {
         if (ts === undefined || ts === '') return '00:00:00';
         if (typeof ts === 'number') {
@@ -58,14 +122,15 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
             const hours = Math.floor(seconds / 3600);
             const minutes = Math.floor((seconds % 3600) / 60);
             const secs = seconds % 60;
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            return `${hours.toString().padStart(2, '0')}:${minutes
+                .toString()
+                .padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
         }
         return ts;
     };
 
     return (
         <>
-            {/* Input handles - positioned on left */}
             <CustomHandle
                 id="video_url"
                 type="target"
@@ -83,7 +148,6 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
                 position={Position.Left}
                 style={{ top: '66%' }}
             />
-            {/* Output handle */}
             <CustomHandle
                 id="output"
                 type="source"
@@ -102,8 +166,6 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
                 error={nodeData.error}
                 selected={selected}
             >
-
-                {/* Timestamp input */}
                 <div className="mb-3">
                     <label className="text-xs text-text-secondary mb-1 block">
                         Timestamp {timestampConnected && '(connected)'}
@@ -120,20 +182,20 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
                         ${timestampConnected ? 'opacity-50 cursor-not-allowed bg-background-tertiary' : ''}`}
                     />
                     <p className="text-xs text-text-tertiary mt-1">
-                        Format: HH:MM:SS or seconds (e.g., 1.5)
+                        Format: HH:MM:SS, seconds, or percentage (e.g. 50%)
                     </p>
                 </div>
 
-                {/* Run button */}
                 <button
                     onClick={handleRun}
                     disabled={!canRun}
                     className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded font-medium text-sm
                     transition-colors
-                    ${canRun
+                    ${
+                        canRun
                             ? 'bg-accent-purple hover:bg-accent-purple-dark text-white'
                             : 'bg-background-tertiary text-text-tertiary cursor-not-allowed'
-                        }`}
+                    }`}
                 >
                     {isExecuting ? (
                         <>
@@ -148,10 +210,11 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
                     )}
                 </button>
 
-                {/* Extracted frame preview */}
                 {nodeData.extractedFrameUrl && (
                     <div className="mt-3">
                         <label className="text-xs text-text-secondary mb-1 block">Extracted Frame</label>
+                        {/* Local object URLs and generated data URLs are not handled by next/image. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             src={nodeData.extractedFrameUrl}
                             alt="Extracted frame"
@@ -159,10 +222,10 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
                         />
                     </div>
                 )}
-
             </BaseNode>
         </>
     );
 }
 
 export default ExtractFrameNode;
+

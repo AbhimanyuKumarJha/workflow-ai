@@ -44,7 +44,7 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
                     setIsUploading(false);
                 };
                 img.src = previewUrl;
-            } catch (error) {
+            } catch {
                 updateNodeData(id, { error: 'Failed to upload image' });
                 setIsUploading(false);
             }
@@ -104,6 +104,8 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
                 {/* Upload area or preview */}
                 {nodeData.imageUrl ? (
                     <div className="relative group">
+                        {/* Local object URLs and generated data URLs are not handled by next/image. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             src={nodeData.imageUrl}
                             alt="Uploaded"

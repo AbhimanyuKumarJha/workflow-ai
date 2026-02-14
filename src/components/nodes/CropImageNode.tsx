@@ -7,12 +7,18 @@ import { BaseNode, CustomHandle } from './BaseNode';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import { useUIStore } from '@/stores/ui-store';
 import { CropImageNodeData } from '@/lib/types';
+import { toast } from 'sonner';
+import { useHistoryStore } from '@/stores/history-store';
 
 export function CropImageNode({ id, data, selected }: NodeProps) {
     const nodeData = data as CropImageNodeData;
     const edges = useWorkflowStore((state) => state.edges);
+    const workflowId = useWorkflowStore((state) => state.workflowId);
     const updateNodeData = useWorkflowStore((state) => state.updateNodeData);
     const executingNodes = useUIStore((state) => state.executingNodes);
+    const addRun = useHistoryStore((state) => state.addRun);
+    const fetchHistory = useHistoryStore((state) => state.fetchHistory);
+    const setActiveRunId = useHistoryStore((state) => state.setActiveRunId);
 
     // Check which handles are connected
     const imageConnected = edges.some(
@@ -40,21 +46,86 @@ export function CropImageNode({ id, data, selected }: NodeProps) {
         [id, updateNodeData]
     );
 
-    const handleRun = useCallback(() => {
-        // This will be implemented in Phase 5 with Trigger.dev
+    const handleRun = useCallback(async () => {
+        if (!workflowId) {
+            toast.error('Save the workflow before executing a node');
+            return;
+        }
+
         updateNodeData(id, {
             isExecuting: true,
             error: undefined,
         });
 
-        // Simulate execution
-        setTimeout(() => {
+        try {
+            const response = await fetch('/api/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    workflowId,
+                    scope: 'SINGLE',
+                    selectedNodeIds: [id],
+                }),
+            });
+
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                      error?: string;
+                      runId?: string;
+                      run?: {
+                          nodeRuns?: Array<{
+                              nodeId: string;
+                              outputs?: Record<string, unknown>;
+                              errorMessage?: string | null;
+                          }>;
+                      };
+                  }
+                | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.error ?? 'Node execution failed');
+            }
+
+            if (payload?.run) {
+                addRun(payload.run as Parameters<typeof addRun>[0]);
+            }
+            if (payload?.runId) {
+                setActiveRunId(payload.runId);
+            }
+            await fetchHistory(workflowId);
+
+            const nodeRun = payload?.run?.nodeRuns?.find((run) => run.nodeId === id);
+            const croppedUrl =
+                typeof nodeRun?.outputs?.croppedUrl === 'string'
+                    ? nodeRun.outputs.croppedUrl
+                    : typeof nodeRun?.outputs?.imageUrl === 'string'
+                    ? nodeRun.outputs.imageUrl
+                    : undefined;
+
             updateNodeData(id, {
                 isExecuting: false,
-                croppedUrl: nodeData.imageUrl, // Placeholder - would be actual cropped image
+                croppedUrl: croppedUrl ?? nodeData.croppedUrl,
+                error: nodeRun?.errorMessage ?? undefined,
             });
-        }, 1000);
-    }, [id, nodeData.imageUrl, updateNodeData]);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Node execution failed';
+            updateNodeData(id, {
+                isExecuting: false,
+                error: message,
+            });
+            toast.error(message);
+        }
+    }, [
+        workflowId,
+        id,
+        updateNodeData,
+        addRun,
+        setActiveRunId,
+        fetchHistory,
+        nodeData.croppedUrl,
+    ]);
 
     const canRun = !isExecuting && (imageConnected || nodeData.imageUrl);
 
@@ -214,6 +285,8 @@ export function CropImageNode({ id, data, selected }: NodeProps) {
                 {nodeData.croppedUrl && (
                     <div className="mt-3">
                         <label className="text-xs text-text-secondary mb-1 block">Result</label>
+                        {/* Local object URLs and generated data URLs are not handled by next/image. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             src={nodeData.croppedUrl}
                             alt="Cropped"

@@ -7,6 +7,8 @@ import { BaseNode, CustomHandle } from './BaseNode';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import { useUIStore } from '@/stores/ui-store';
 import { LLMNodeData } from '@/lib/types';
+import { toast } from 'sonner';
+import { useHistoryStore } from '@/stores/history-store';
 
 const GEMINI_MODELS = [
     { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash' },
@@ -17,8 +19,12 @@ const GEMINI_MODELS = [
 export function LLMNode({ id, data, selected }: NodeProps) {
     const nodeData = data as LLMNodeData;
     const edges = useWorkflowStore((state) => state.edges);
+    const workflowId = useWorkflowStore((state) => state.workflowId);
     const updateNodeData = useWorkflowStore((state) => state.updateNodeData);
     const executingNodes = useUIStore((state) => state.executingNodes);
+    const addRun = useHistoryStore((state) => state.addRun);
+    const fetchHistory = useHistoryStore((state) => state.fetchHistory);
+    const setActiveRunId = useHistoryStore((state) => state.setActiveRunId);
     const [responseExpanded, setResponseExpanded] = useState(false);
 
     // Check which handles are connected
@@ -55,22 +61,86 @@ export function LLMNode({ id, data, selected }: NodeProps) {
         [id, updateNodeData]
     );
 
-    const handleRun = useCallback(() => {
-        // This will be implemented in Phase 5 with Trigger.dev
-        // For now, show a placeholder
+    const handleRun = useCallback(async () => {
+        if (!workflowId) {
+            toast.error('Save the workflow before executing a node');
+            return;
+        }
+
         updateNodeData(id, {
             isExecuting: true,
             error: undefined,
         });
 
-        // Simulate execution
-        setTimeout(() => {
+        try {
+            const response = await fetch('/api/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    workflowId,
+                    scope: 'SINGLE',
+                    selectedNodeIds: [id],
+                }),
+            });
+
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                      error?: string;
+                      runId?: string;
+                      run?: {
+                          nodeRuns?: Array<{
+                              nodeId: string;
+                              outputs?: Record<string, unknown>;
+                              errorMessage?: string | null;
+                          }>;
+                      };
+                  }
+                | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.error ?? 'Node execution failed');
+            }
+
+            if (payload?.run) {
+                addRun(payload.run as Parameters<typeof addRun>[0]);
+            }
+            if (payload?.runId) {
+                setActiveRunId(payload.runId);
+            }
+            await fetchHistory(workflowId);
+
+            const nodeRun = payload?.run?.nodeRuns?.find((run) => run.nodeId === id);
+            const outputText =
+                typeof nodeRun?.outputs?.text === 'string'
+                    ? nodeRun.outputs.text
+                    : typeof nodeRun?.outputs?.response === 'string'
+                    ? nodeRun.outputs.response
+                    : undefined;
+
             updateNodeData(id, {
                 isExecuting: false,
-                response: 'This is a placeholder response. Actual LLM execution will be implemented in Phase 5 with Trigger.dev integration.',
+                response: outputText ?? nodeData.response,
+                error: nodeRun?.errorMessage ?? undefined,
             });
-        }, 1500);
-    }, [id, updateNodeData]);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Node execution failed';
+            updateNodeData(id, {
+                isExecuting: false,
+                error: message,
+            });
+            toast.error(message);
+        }
+    }, [
+        workflowId,
+        id,
+        updateNodeData,
+        addRun,
+        setActiveRunId,
+        fetchHistory,
+        nodeData.response,
+    ]);
 
     const canRun = !isExecuting && (userMessageConnected || nodeData.userMessage);
 
