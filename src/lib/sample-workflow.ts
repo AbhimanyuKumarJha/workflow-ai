@@ -1,0 +1,167 @@
+import { WorkflowSnapshot } from '@/lib/types';
+
+export const sampleWorkflow: WorkflowSnapshot = {
+    nodes: [
+        {
+            id: 'node-1',
+            type: 'upload_image',
+            position: { x: 80, y: 100 },
+            data: {
+                label: 'Product Photo',
+            },
+        },
+        {
+            id: 'node-2',
+            type: 'crop_image',
+            position: { x: 360, y: 100 },
+            data: {
+                label: 'Crop Product',
+                xPercent: 10,
+                yPercent: 10,
+                widthPercent: 80,
+                heightPercent: 80,
+            },
+        },
+        {
+            id: 'node-3',
+            type: 'text',
+            position: { x: 80, y: 280 },
+            data: {
+                label: 'System Prompt',
+                value: 'You are a professional marketing copywriter. Generate a compelling one-paragraph product description.',
+            },
+        },
+        {
+            id: 'node-4',
+            type: 'text',
+            position: { x: 80, y: 450 },
+            data: {
+                label: 'Product Details',
+                value: 'Product: Wireless Bluetooth Headphones. Features: Noise cancellation, 30-hour battery, foldable design.',
+            },
+        },
+        {
+            id: 'node-5',
+            type: 'llm',
+            position: { x: 670, y: 220 },
+            data: {
+                label: 'Generate Description',
+                selectedModel: 'gemini-2.0-flash-exp',
+                systemPrompt: '',
+                userMessage: '',
+            },
+        },
+        {
+            id: 'node-6',
+            type: 'upload_video',
+            position: { x: 80, y: 670 },
+            data: {
+                label: 'Product Demo Video',
+            },
+        },
+        {
+            id: 'node-7',
+            type: 'extract_frame',
+            position: { x: 360, y: 670 },
+            data: {
+                label: 'Extract Frame',
+                timestamp: '50%',
+            },
+        },
+        {
+            id: 'node-8',
+            type: 'text',
+            position: { x: 670, y: 560 },
+            data: {
+                label: 'Social Media Prompt',
+                value: 'You are a social media manager. Create a tweet-length marketing post based on the product image and video frame.',
+            },
+        },
+        {
+            id: 'node-9',
+            type: 'llm',
+            position: { x: 980, y: 430 },
+            data: {
+                label: 'Generate Social Post',
+                selectedModel: 'gemini-2.0-flash-exp',
+                systemPrompt: '',
+                userMessage: '',
+            },
+        },
+    ],
+    edges: [
+        {
+            id: 'e1-2',
+            source: 'node-1',
+            sourceHandle: 'output',
+            target: 'node-2',
+            targetHandle: 'image_url',
+            type: 'custom',
+        },
+        {
+            id: 'e2-5',
+            source: 'node-2',
+            sourceHandle: 'output',
+            target: 'node-5',
+            targetHandle: 'images',
+            type: 'custom',
+        },
+        {
+            id: 'e3-5',
+            source: 'node-3',
+            sourceHandle: 'output',
+            target: 'node-5',
+            targetHandle: 'system_prompt',
+            type: 'custom',
+        },
+        {
+            id: 'e4-5',
+            source: 'node-4',
+            sourceHandle: 'output',
+            target: 'node-5',
+            targetHandle: 'user_message',
+            type: 'custom',
+        },
+        {
+            id: 'e6-7',
+            source: 'node-6',
+            sourceHandle: 'output',
+            target: 'node-7',
+            targetHandle: 'video_url',
+            type: 'custom',
+        },
+        {
+            id: 'e5-9',
+            source: 'node-5',
+            sourceHandle: 'output',
+            target: 'node-9',
+            targetHandle: 'user_message',
+            type: 'custom',
+        },
+        {
+            id: 'e8-9',
+            source: 'node-8',
+            sourceHandle: 'output',
+            target: 'node-9',
+            targetHandle: 'system_prompt',
+            type: 'custom',
+        },
+        {
+            id: 'e2-9',
+            source: 'node-2',
+            sourceHandle: 'output',
+            target: 'node-9',
+            targetHandle: 'images',
+            type: 'custom',
+        },
+        {
+            id: 'e7-9',
+            source: 'node-7',
+            sourceHandle: 'output',
+            target: 'node-9',
+            targetHandle: 'images',
+            type: 'custom',
+        },
+    ],
+    viewport: { x: -20, y: -40, zoom: 0.8 },
+};
