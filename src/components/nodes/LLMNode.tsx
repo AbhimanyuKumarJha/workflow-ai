@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { NodeProps, Position } from '@xyflow/react';
 import { Brain, Loader2, ChevronDown, ChevronUp, Play } from 'lucide-react';
 import { BaseNode, CustomHandle } from './BaseNode';
@@ -26,6 +26,13 @@ export function LLMNode({ id, data, selected }: NodeProps) {
     const fetchHistory = useHistoryStore((state) => state.fetchHistory);
     const setActiveRunId = useHistoryStore((state) => state.setActiveRunId);
     const [responseExpanded, setResponseExpanded] = useState(false);
+
+    // Auto-expand response when it becomes available
+    useEffect(() => {
+        if (nodeData.response) {
+            setResponseExpanded(true);
+        }
+    }, [nodeData.response]);
 
     // Check which handles are connected
     const systemPromptConnected = edges.some(
@@ -87,16 +94,16 @@ export function LLMNode({ id, data, selected }: NodeProps) {
 
             const payload = (await response.json().catch(() => null)) as
                 | {
-                      error?: string;
-                      runId?: string;
-                      run?: {
-                          nodeRuns?: Array<{
-                              nodeId: string;
-                              outputs?: Record<string, unknown>;
-                              errorMessage?: string | null;
-                          }>;
-                      };
-                  }
+                    error?: string;
+                    runId?: string;
+                    run?: {
+                        nodeRuns?: Array<{
+                            nodeId: string;
+                            outputs?: Record<string, unknown>;
+                            errorMessage?: string | null;
+                        }>;
+                    };
+                }
                 | null;
 
             if (!response.ok) {
@@ -116,8 +123,8 @@ export function LLMNode({ id, data, selected }: NodeProps) {
                 typeof nodeRun?.outputs?.text === 'string'
                     ? nodeRun.outputs.text
                     : typeof nodeRun?.outputs?.response === 'string'
-                    ? nodeRun.outputs.response
-                    : undefined;
+                        ? nodeRun.outputs.response
+                        : undefined;
 
             updateNodeData(id, {
                 isExecuting: false,

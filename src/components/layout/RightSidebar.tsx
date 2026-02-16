@@ -122,7 +122,18 @@ export function RightSidebar() {
     }, [workflowId, fetchHistory, clearRuns]);
 
     if (!rightSidebarOpen) {
-        return null;
+        // Collapsed icon rail
+        return (
+            <aside className="w-14 border-l border-gray-800 bg-gray-900 flex flex-col items-center py-4">
+                <Clock className="h-5 w-5 text-purple-400" />
+                <span className="text-[10px] text-gray-400 mt-1">History</span>
+                {runs.length > 0 && (
+                    <span className="mt-2 text-[10px] text-gray-300 bg-gray-800 rounded-full w-6 h-6 flex items-center justify-center">
+                        {runs.length}
+                    </span>
+                )}
+            </aside>
+        );
     }
 
     return (

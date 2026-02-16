@@ -18,14 +18,28 @@ export default function WorkflowEditorPage() {
     const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow);
     const resetWorkflow = useWorkflowStore((state) => state.resetWorkflow);
 
-    const leftSidebarOpen = useUIStore((state) => state.leftSidebarOpen);
-    const rightSidebarOpen = useUIStore((state) => state.rightSidebarOpen);
+    const setLeftSidebarOpen = useUIStore((state) => state.setLeftSidebarOpen);
+    const setRightSidebarOpen = useUIStore((state) => state.setRightSidebarOpen);
 
     const fetchHistory = useHistoryStore((state) => state.fetchHistory);
     const clearRuns = useHistoryStore((state) => state.clearRuns);
     const activeRunId = useHistoryStore((state) => state.activeRunId);
 
     useExecutionStatus(activeRunId);
+
+    // Auto-collapse sidebars on small screens
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth < 768) {
+                setLeftSidebarOpen(false);
+                setRightSidebarOpen(false);
+            }
+        };
+
+        handleResize(); // Check on mount
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [setLeftSidebarOpen, setRightSidebarOpen]);
 
     useEffect(() => {
         let cancelled = false;
@@ -70,14 +84,14 @@ export default function WorkflowEditorPage() {
     }, []);
 
     return (
-        <div className="h-full flex">
-            {leftSidebarOpen && <LeftSidebar />}
+        <div className="h-full flex overflow-hidden">
+            <LeftSidebar />
 
             <main className="flex-1 relative min-w-0">
                 <WorkflowCanvas />
             </main>
 
-            {rightSidebarOpen && <RightSidebar />}
+            <RightSidebar />
         </div>
     );
 }

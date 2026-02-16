@@ -6,6 +6,7 @@ import { Video, Upload, X, Loader2 } from 'lucide-react';
 import { BaseNode, CustomHandle } from './BaseNode';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import { UploadVideoNodeData } from '@/lib/types';
+import { useTransloaditUpload } from '@/hooks/useTransloaditUpload';
 
 export function UploadVideoNode({ id, data, selected }: NodeProps) {
     const nodeData = data as UploadVideoNodeData;
@@ -14,32 +15,34 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
     const [dragOver, setDragOver] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
 
+    const { triggerUpload } = useTransloaditUpload({
+        allowedFileTypes: ['video/*'],
+        onStart: () => {
+            setIsUploading(true);
+            updateNodeData(id, { error: undefined });
+        },
+        onSuccess: (url) => {
+            updateNodeData(id, {
+                videoUrl: url,
+                mimeType: 'video/mp4',
+            });
+            setIsUploading(false);
+        },
+        onError: (message) => {
+            updateNodeData(id, { error: message });
+            setIsUploading(false);
+        },
+    });
+
     const handleFileSelect = useCallback(
-        async (file: File) => {
+        (file: File) => {
             if (!file.type.startsWith('video/')) {
                 updateNodeData(id, { error: 'Please select a video file' });
                 return;
             }
-
-            setIsUploading(true);
-            updateNodeData(id, { error: undefined });
-
-            try {
-                // Create a local preview URL for now
-                // In production, this would upload to Transloadit
-                const previewUrl = URL.createObjectURL(file);
-
-                updateNodeData(id, {
-                    videoUrl: previewUrl,
-                    mimeType: file.type,
-                });
-                setIsUploading(false);
-            } catch {
-                updateNodeData(id, { error: 'Failed to upload video' });
-                setIsUploading(false);
-            }
+            triggerUpload(file);
         },
-        [id, updateNodeData]
+        [id, updateNodeData, triggerUpload]
     );
 
     const handleDrop = useCallback(

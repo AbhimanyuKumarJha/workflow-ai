@@ -1,6 +1,6 @@
 import { NodeType, Prisma } from '@prisma/client';
 import { tasks } from '@trigger.dev/sdk/v3';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 import { getCurrentUserOrThrow } from '@/lib/current-user';
 import { CustomEdge, CustomNode } from '@/lib/types';
 import {
@@ -68,39 +68,93 @@ async function executeNode(
     node: CustomNode,
     inputs: Record<string, unknown>
 ): Promise<NodeExecutionOutcome> {
+    const useTrigger = !!process.env.TRIGGER_SECRET_KEY;
+
     switch (node.type) {
         case 'text': {
             const value = toStringValue(node.data.value) ?? '';
+
+            if (useTrigger) {
+                const run = await tasks.triggerAndPoll('text-passthrough', { value });
+                const runOutput =
+                    (typeof run.output === 'object' && run.output !== null
+                        ? (run.output as Record<string, unknown>)
+                        : {}) ?? {};
+                return {
+                    outputs: {
+                        text: toStringValue(runOutput.text) ?? value,
+                        value: toStringValue(runOutput.value) ?? value,
+                    },
+                    taskName: 'text-passthrough',
+                    triggerRunId: run.id,
+                };
+            }
+
             return {
-                outputs: {
-                    text: value,
-                    value,
-                },
+                outputs: { text: value, value },
             };
         }
 
         case 'upload_image': {
-            return {
-                outputs: {
-                    imageUrl: node.data.imageUrl ?? null,
-                    assetId: node.data.assetId ?? null,
-                    mimeType: node.data.mimeType ?? null,
-                    width: node.data.width ?? null,
-                    height: node.data.height ?? null,
-                },
+            const payload = {
+                imageUrl: node.data.imageUrl ?? null,
+                assetId: node.data.assetId ?? null,
+                mimeType: node.data.mimeType ?? null,
+                width: node.data.width ?? null,
+                height: node.data.height ?? null,
             };
+
+            if (useTrigger) {
+                const run = await tasks.triggerAndPoll('upload-image-passthrough', payload);
+                const runOutput =
+                    (typeof run.output === 'object' && run.output !== null
+                        ? (run.output as Record<string, unknown>)
+                        : {}) ?? {};
+                return {
+                    outputs: {
+                        imageUrl: runOutput.imageUrl ?? payload.imageUrl,
+                        assetId: runOutput.assetId ?? payload.assetId,
+                        mimeType: runOutput.mimeType ?? payload.mimeType,
+                        width: runOutput.width ?? payload.width,
+                        height: runOutput.height ?? payload.height,
+                    },
+                    taskName: 'upload-image-passthrough',
+                    triggerRunId: run.id,
+                };
+            }
+
+            return { outputs: payload };
         }
 
         case 'upload_video': {
-            return {
-                outputs: {
-                    videoUrl: node.data.videoUrl ?? null,
-                    assetId: node.data.assetId ?? null,
-                    mimeType: node.data.mimeType ?? null,
-                    durationMs: node.data.durationMs ?? null,
-                    thumbnailUrl: node.data.thumbnailUrl ?? null,
-                },
+            const payload = {
+                videoUrl: node.data.videoUrl ?? null,
+                assetId: node.data.assetId ?? null,
+                mimeType: node.data.mimeType ?? null,
+                durationMs: node.data.durationMs ?? null,
+                thumbnailUrl: node.data.thumbnailUrl ?? null,
             };
+
+            if (useTrigger) {
+                const run = await tasks.triggerAndPoll('upload-video-passthrough', payload);
+                const runOutput =
+                    (typeof run.output === 'object' && run.output !== null
+                        ? (run.output as Record<string, unknown>)
+                        : {}) ?? {};
+                return {
+                    outputs: {
+                        videoUrl: runOutput.videoUrl ?? payload.videoUrl,
+                        assetId: runOutput.assetId ?? payload.assetId,
+                        mimeType: runOutput.mimeType ?? payload.mimeType,
+                        durationMs: runOutput.durationMs ?? payload.durationMs,
+                        thumbnailUrl: runOutput.thumbnailUrl ?? payload.thumbnailUrl,
+                    },
+                    taskName: 'upload-video-passthrough',
+                    triggerRunId: run.id,
+                };
+            }
+
+            return { outputs: payload };
         }
 
         case 'llm': {
@@ -378,12 +432,12 @@ export const POST = withErrorHandler(async (request: Request) => {
                     const message = error instanceof Error ? error.message : 'Execution failed';
                     const errorDetails = error instanceof Error
                         ? {
-                              name: error.name,
-                              stack: error.stack ?? null,
-                          }
+                            name: error.name,
+                            stack: error.stack ?? null,
+                        }
                         : {
-                              message: String(error),
-                          };
+                            message: String(error),
+                        };
 
                     await prisma.nodeRun.update({
                         where: { id: nodeRun.id },

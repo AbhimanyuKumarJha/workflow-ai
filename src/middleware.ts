@@ -1,6 +1,3 @@
-
-// export { default, config } from './src/middleware';
-
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
 // Public routes - everything else is protected by default.

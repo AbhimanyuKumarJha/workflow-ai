@@ -10,9 +10,10 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@clerk/nextjs": "^5.7.5",
+    "@clerk/nextjs": "^6.37.4",
     "@google/generative-ai": "^0.21.0",
-    "@prisma/client": "^5.22.0",
+    "@prisma/adapter-pg": "^7.4.0",
+    "@prisma/client": "^7.4.0",
     "@tailwindcss/postcss": "^4.1.0",
     "@trigger.dev/react-hooks": "^3.0.0",
     "@trigger.dev/sdk": "^3.0.0",
@@ -26,6 +27,7 @@
     "lucide-react": "^0.469.0",
     "next": "^16.1.6",
     "node-fetch": "^3.3.2",
+    "pg": "^8.18.0",
     "postcss": "^8.4.49",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -42,7 +44,7 @@
     "@types/react-dom": "^19.0.2",
     "eslint": "^9.17.0",
     "eslint-config-next": "^16.1.6",
-    "prisma": "^5.22.0",
+    "prisma": "^7.4.0",
     "typescript": "^5.7.2"
   }
 }

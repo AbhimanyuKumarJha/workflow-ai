@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { UserButton } from '@clerk/nextjs';
 import {
     Download,
@@ -10,6 +10,7 @@ import {
     Play,
     Save,
     Upload,
+    MousePointerClick,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWorkflowStore } from '@/stores/workflow-store';
@@ -39,6 +40,13 @@ export function Header() {
 
     const [isEditingName, setIsEditingName] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
+
+    // Track selected nodes for "Run Selected" feature
+    const selectedNodeIds = useMemo(
+        () => nodes.filter((n) => n.selected).map((n) => n.id),
+        [nodes]
+    );
+    const hasSelection = selectedNodeIds.length > 1;
 
     const handleSave = async () => {
         try {
@@ -133,11 +141,11 @@ export function Header() {
 
             const payload = (await response.json().catch(() => null)) as
                 | {
-                      error?: string;
-                      runId?: string;
-                      runNumber?: number;
-                      run?: Parameters<typeof addRun>[0];
-                  }
+                    error?: string;
+                    runId?: string;
+                    runNumber?: number;
+                    run?: Parameters<typeof addRun>[0];
+                }
                 | null;
 
             if (!response.ok) {
@@ -160,6 +168,68 @@ export function Header() {
             );
         } catch (error) {
             toast.error(error instanceof Error ? error.message : 'Failed to execute workflow');
+        } finally {
+            setIsExecuting(false);
+        }
+    };
+
+    const handleExecuteSelected = async () => {
+        if (selectedNodeIds.length === 0) {
+            toast.error('Select nodes on the canvas first');
+            return;
+        }
+
+        setIsExecuting(true);
+
+        try {
+            let targetWorkflowId = workflowId;
+            if (!targetWorkflowId) {
+                await saveWorkflow();
+                targetWorkflowId = useWorkflowStore.getState().workflowId;
+            }
+
+            if (!targetWorkflowId) {
+                throw new Error('Workflow must be saved before execution');
+            }
+
+            const response = await fetch('/api/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    workflowId: targetWorkflowId,
+                    scope: 'SELECTED',
+                    selectedNodeIds,
+                }),
+            });
+
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                    error?: string;
+                    runId?: string;
+                    runNumber?: number;
+                    run?: Parameters<typeof addRun>[0];
+                }
+                | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.error ?? 'Execution failed');
+            }
+
+            if (payload?.run) {
+                addRun(payload.run);
+            }
+            if (payload?.runId) {
+                setActiveRunId(payload.runId);
+            }
+
+            await fetchHistory(targetWorkflowId);
+            toast.success(
+                payload?.runNumber
+                    ? `Run #${payload.runNumber} (selected nodes) started`
+                    : 'Selected node execution started'
+            );
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to execute selected nodes');
         } finally {
             setIsExecuting(false);
         }
@@ -250,6 +320,20 @@ export function Header() {
                     <Upload size={16} />
                     <span className="hidden sm:inline">Import</span>
                 </button>
+
+                {hasSelection && (
+                    <button
+                        onClick={handleExecuteSelected}
+                        disabled={isExecuting}
+                        className="flex items-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded transition-colors"
+                        title={`Run ${selectedNodeIds.length} selected nodes`}
+                    >
+                        <MousePointerClick size={16} />
+                        <span className="hidden sm:inline">
+                            {isExecuting ? 'Running...' : `Run Selected (${selectedNodeIds.length})`}
+                        </span>
+                    </button>
+                )}
 
                 <button
                     onClick={handleExecute}

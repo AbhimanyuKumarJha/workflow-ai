@@ -1,4 +1,4 @@
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 import { getCurrentUserOrThrow } from '@/lib/current-user';
 import { withErrorHandler, WorkflowError } from '@/lib/error-handler';
 import { HistoryQuerySchema } from '@/lib/validations';
@@ -61,9 +61,9 @@ export const GET = withErrorHandler(async (request: Request) => {
         take: parsed.limit + 1,
         ...(parsed.cursor
             ? {
-                  skip: 1,
-                  cursor: { id: parsed.cursor },
-              }
+                skip: 1,
+                cursor: { id: parsed.cursor },
+            }
             : {}),
         include: {
             nodeRuns: {

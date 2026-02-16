@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { WebhookEvent } from '@clerk/backend';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 import { withErrorHandler, WorkflowError } from '@/lib/error-handler';
 
 function safeCompare(a: string, b: string): boolean {

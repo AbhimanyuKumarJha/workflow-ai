@@ -1,10 +1,11 @@
 import { auth } from '@clerk/nextjs/server';
 import { User } from '@prisma/client';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 import { WorkflowError } from '@/lib/error-handler';
 
 export async function getCurrentUserOrThrow(): Promise<User> {
-    const { userId } = await auth();
+    const authResult = await auth();
+    const { userId } = authResult;
     if (!userId) {
         throw new WorkflowError('Unauthorized', 'UNAUTHORIZED', 401);
     }

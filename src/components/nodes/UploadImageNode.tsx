@@ -6,6 +6,7 @@ import { ImageIcon, Upload, X, Loader2 } from 'lucide-react';
 import { BaseNode, CustomHandle } from './BaseNode';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import { UploadImageNodeData } from '@/lib/types';
+import { useTransloaditUpload } from '@/hooks/useTransloaditUpload';
 
 export function UploadImageNode({ id, data, selected }: NodeProps) {
     const nodeData = data as UploadImageNodeData;
@@ -13,43 +14,45 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [dragOver, setDragOver] = useState(false);
 
+    const { triggerUpload } = useTransloaditUpload({
+        allowedFileTypes: ['image/*'],
+        onStart: () => {
+            setIsUploading(true);
+            updateNodeData(id, { error: undefined });
+        },
+        onSuccess: (url) => {
+            // Get image dimensions from the URL
+            const img = new Image();
+            img.onload = () => {
+                updateNodeData(id, {
+                    imageUrl: url,
+                    mimeType: 'image/jpeg',
+                    width: img.width,
+                    height: img.height,
+                });
+                setIsUploading(false);
+            };
+            img.onerror = () => {
+                updateNodeData(id, { imageUrl: url });
+                setIsUploading(false);
+            };
+            img.src = url;
+        },
+        onError: (message) => {
+            updateNodeData(id, { error: message });
+            setIsUploading(false);
+        },
+    });
+
     const handleFileSelect = useCallback(
-        async (file: File) => {
+        (file: File) => {
             if (!file.type.startsWith('image/')) {
                 updateNodeData(id, { error: 'Please select an image file' });
                 return;
             }
-
-            setIsUploading(true);
-            updateNodeData(id, { error: undefined });
-
-            try {
-                // Create a local preview URL for now
-                // In production, this would upload to Transloadit
-                const previewUrl = URL.createObjectURL(file);
-
-                // Get image dimensions
-                const img = new Image();
-                img.onload = () => {
-                    updateNodeData(id, {
-                        imageUrl: previewUrl,
-                        mimeType: file.type,
-                        width: img.width,
-                        height: img.height,
-                    });
-                    setIsUploading(false);
-                };
-                img.onerror = () => {
-                    updateNodeData(id, { error: 'Failed to load image' });
-                    setIsUploading(false);
-                };
-                img.src = previewUrl;
-            } catch {
-                updateNodeData(id, { error: 'Failed to upload image' });
-                setIsUploading(false);
-            }
+            triggerUpload(file);
         },
-        [id, updateNodeData]
+        [id, updateNodeData, triggerUpload]
     );
 
     const handleDrop = useCallback(

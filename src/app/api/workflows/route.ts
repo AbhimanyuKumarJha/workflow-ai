@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 import { getCurrentUserOrThrow } from '@/lib/current-user';
 import { withErrorHandler } from '@/lib/error-handler';
 import { WorkflowCreateSchema } from '@/lib/validations';
