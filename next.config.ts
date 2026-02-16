@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
                 protocol: 'https',
                 hostname: '**.amazonaws.com',
             },
+            {
+                protocol: 'https',
+                hostname: '**.r2.dev',
+            },
         ],
     },
     serverExternalPackages: ['@trigger.dev/sdk'],

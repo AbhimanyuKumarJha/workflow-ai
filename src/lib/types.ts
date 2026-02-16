@@ -26,6 +26,7 @@ export interface TextNodeData extends BaseNodeData {
 export interface UploadImageNodeData extends BaseNodeData {
     imageUrl?: string;
     assetId?: string;
+    assemblyId?: string;
     mimeType?: string;
     width?: number;
     height?: number;
@@ -34,6 +35,7 @@ export interface UploadImageNodeData extends BaseNodeData {
 export interface UploadVideoNodeData extends BaseNodeData {
     videoUrl?: string;
     assetId?: string;
+    assemblyId?: string;
     mimeType?: string;
     durationMs?: number;
     thumbnailUrl?: string;

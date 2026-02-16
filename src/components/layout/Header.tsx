@@ -28,6 +28,7 @@ export function Header() {
     const applySnapshot = useWorkflowStore((state) => state.applySnapshot);
     const nodes = useWorkflowStore((state) => state.nodes);
     const isSaving = useWorkflowStore((state) => state.isSaving);
+    const isDirty = useWorkflowStore((state) => state.isDirty);
 
     const leftSidebarOpen = useUIStore((state) => state.leftSidebarOpen);
     const rightSidebarOpen = useUIStore((state) => state.rightSidebarOpen);
@@ -119,7 +120,7 @@ export function Header() {
 
         try {
             let targetWorkflowId = workflowId;
-            if (!targetWorkflowId) {
+            if (!targetWorkflowId || isDirty) {
                 await saveWorkflow();
                 targetWorkflowId = useWorkflowStore.getState().workflowId;
             }
@@ -183,7 +184,7 @@ export function Header() {
 
         try {
             let targetWorkflowId = workflowId;
-            if (!targetWorkflowId) {
+            if (!targetWorkflowId || isDirty) {
                 await saveWorkflow();
                 targetWorkflowId = useWorkflowStore.getState().workflowId;
             }
@@ -369,4 +370,3 @@ export function Header() {
         </header>
     );
 }
-

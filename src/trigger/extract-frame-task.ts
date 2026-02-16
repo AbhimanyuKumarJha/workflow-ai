@@ -135,7 +135,8 @@ export const extractFrameTask = task({
                 outputPath,
             ]);
 
-            const authKey = process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY;
+            const authKey =
+                process.env.TRANSLOADIT_AUTH_KEY ?? process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY;
             const authSecret = process.env.TRANSLOADIT_AUTH_SECRET;
             const templateId = process.env.TRANSLOADIT_TEMPLATE_ID_IMAGE;
 

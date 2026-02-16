@@ -17,14 +17,17 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
 
     const { triggerUpload } = useTransloaditUpload({
         allowedFileTypes: ['video/*'],
+        uploadType: 'video',
         onStart: () => {
             setIsUploading(true);
             updateNodeData(id, { error: undefined });
         },
-        onSuccess: (url) => {
+        onSuccess: (url, meta) => {
             updateNodeData(id, {
                 videoUrl: url,
-                mimeType: 'video/mp4',
+                assemblyId: meta?.assemblyId,
+                mimeType: meta?.mimeType ?? 'video/mp4',
+                durationMs: meta?.durationMs,
             });
             setIsUploading(false);
         },
@@ -67,6 +70,7 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
         updateNodeData(id, {
             videoUrl: undefined,
             assetId: undefined,
+            assemblyId: undefined,
             mimeType: undefined,
             durationMs: undefined,
             thumbnailUrl: undefined,
@@ -119,6 +123,12 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
                             className="w-full max-h-40 rounded border border-border"
                             controls
                             onLoadedMetadata={handleLoadedMetadata}
+                            onError={() =>
+                                updateNodeData(id, {
+                                    error:
+                                        'Video URL loaded from Transloadit could not be played in browser. Check URL access policy/CORP settings.',
+                                })
+                            }
                         />
                         <button
                             onClick={handleRemove}

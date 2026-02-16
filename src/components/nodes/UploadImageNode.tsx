@@ -16,24 +16,40 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
 
     const { triggerUpload } = useTransloaditUpload({
         allowedFileTypes: ['image/*'],
+        uploadType: 'image',
         onStart: () => {
             setIsUploading(true);
             updateNodeData(id, { error: undefined });
         },
-        onSuccess: (url) => {
-            // Get image dimensions from the URL
+        onSuccess: (url, meta) => {
+            const mimeType = meta?.mimeType ?? 'image/jpeg';
+            const assemblyId = meta?.assemblyId;
+
+            if (typeof meta?.width === 'number' && typeof meta?.height === 'number') {
+                updateNodeData(id, {
+                    imageUrl: url,
+                    assemblyId,
+                    mimeType,
+                    width: meta.width,
+                    height: meta.height,
+                });
+                setIsUploading(false);
+                return;
+            }
+
             const img = new Image();
             img.onload = () => {
                 updateNodeData(id, {
                     imageUrl: url,
-                    mimeType: 'image/jpeg',
+                    assemblyId,
+                    mimeType,
                     width: img.width,
                     height: img.height,
                 });
                 setIsUploading(false);
             };
             img.onerror = () => {
-                updateNodeData(id, { imageUrl: url });
+                updateNodeData(id, { imageUrl: url, assemblyId, mimeType });
                 setIsUploading(false);
             };
             img.src = url;
@@ -77,6 +93,7 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
         updateNodeData(id, {
             imageUrl: undefined,
             assetId: undefined,
+            assemblyId: undefined,
             mimeType: undefined,
             width: undefined,
             height: undefined,
@@ -113,6 +130,12 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
                             src={nodeData.imageUrl}
                             alt="Uploaded"
                             className="w-full max-h-40 object-contain rounded border border-border"
+                            onError={() =>
+                                updateNodeData(id, {
+                                    error:
+                                        'Image URL loaded from Transloadit could not be displayed in browser. Check URL access policy/CORP settings.',
+                                })
+                            }
                         />
                         <button
                             onClick={handleRemove}

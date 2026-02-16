@@ -20,6 +20,8 @@ export function LLMNode({ id, data, selected }: NodeProps) {
     const nodeData = data as LLMNodeData;
     const edges = useWorkflowStore((state) => state.edges);
     const workflowId = useWorkflowStore((state) => state.workflowId);
+    const isDirty = useWorkflowStore((state) => state.isDirty);
+    const saveWorkflow = useWorkflowStore((state) => state.saveWorkflow);
     const updateNodeData = useWorkflowStore((state) => state.updateNodeData);
     const executingNodes = useUIStore((state) => state.executingNodes);
     const addRun = useHistoryStore((state) => state.addRun);
@@ -80,13 +82,19 @@ export function LLMNode({ id, data, selected }: NodeProps) {
         });
 
         try {
+            let targetWorkflowId = workflowId;
+            if (isDirty) {
+                await saveWorkflow();
+                targetWorkflowId = useWorkflowStore.getState().workflowId ?? targetWorkflowId;
+            }
+
             const response = await fetch('/api/execute', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    workflowId,
+                    workflowId: targetWorkflowId,
                     scope: 'SINGLE',
                     selectedNodeIds: [id],
                 }),
@@ -116,7 +124,7 @@ export function LLMNode({ id, data, selected }: NodeProps) {
             if (payload?.runId) {
                 setActiveRunId(payload.runId);
             }
-            await fetchHistory(workflowId);
+            await fetchHistory(targetWorkflowId);
 
             const nodeRun = payload?.run?.nodeRuns?.find((run) => run.nodeId === id);
             const outputText =
@@ -141,6 +149,8 @@ export function LLMNode({ id, data, selected }: NodeProps) {
         }
     }, [
         workflowId,
+        isDirty,
+        saveWorkflow,
         id,
         updateNodeData,
         addRun,
