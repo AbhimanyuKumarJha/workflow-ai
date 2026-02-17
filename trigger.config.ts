@@ -3,7 +3,7 @@ import { ffmpeg } from "@trigger.dev/build/extensions/core";
 
 export default defineConfig({
     // Set via TRIGGER_PROJECT_REF env var, or replace with your actual project ref
-    project: process.env.TRIGGER_PROJECT_REF ?? "your-project-ref",
+    project: process.env.TRIGGER_PROJECT_REF ?? "proj_qyqcccpnmsfbrvvbwuej",
     maxDuration: 3600,
     retries: {
         enabledInDev: true,

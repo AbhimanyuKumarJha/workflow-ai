@@ -46,7 +46,7 @@ export const sampleWorkflow: WorkflowSnapshot = {
             position: { x: 670, y: 220 },
             data: {
                 label: 'Generate Description',
-                selectedModel: 'gemini-2.0-flash-exp',
+                selectedModel: 'gemini-3-flash-preview',
                 systemPrompt: '',
                 userMessage: '',
             },
@@ -83,7 +83,7 @@ export const sampleWorkflow: WorkflowSnapshot = {
             position: { x: 980, y: 430 },
             data: {
                 label: 'Generate Social Post',
-                selectedModel: 'gemini-2.0-flash-exp',
+                selectedModel: 'gemini-3-flash-preview',
                 systemPrompt: '',
                 userMessage: '',
             },
@@ -111,7 +111,7 @@ export const sampleWorkflow: WorkflowSnapshot = {
             data: {
                 label: 'Generate Hero Image',
                 prompt: '',
-                model: 'gemini-2.0-flash-exp',
+                model: 'gemini-2.5-flash-image',
             },
         },
         {

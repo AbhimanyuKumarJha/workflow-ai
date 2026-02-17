@@ -1,5 +1,5 @@
 import { NodeType, Prisma } from '@prisma/client';
-import { tasks } from '@trigger.dev/sdk/v3';
+import { runs, tasks } from '@trigger.dev/sdk/v3';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserOrThrow } from '@/lib/current-user';
 import { persistDurableAssetFromUrl } from '@/lib/assets';
@@ -20,6 +20,20 @@ interface NodeExecutionOutcome {
 }
 
 const DEFAULT_WORKFLOW_TASK_TIMEOUT_MS = 120_000;
+const IS_DEV = process.env.NODE_ENV === 'development';
+
+function devLog(message: string, details?: Record<string, unknown>) {
+    if (!IS_DEV) {
+        return;
+    }
+
+    if (details) {
+        console.log(`[workflow-execute] ${message}`, details);
+        return;
+    }
+
+    console.log(`[workflow-execute] ${message}`);
+}
 
 function getWorkflowTaskTimeoutMs(): number {
     const raw = process.env.WORKFLOW_TASK_TIMEOUT_MS;
@@ -155,6 +169,73 @@ async function withTaskTimeout<T>(taskName: string, taskPromise: Promise<T>): Pr
     }
 }
 
+interface TriggerRunLike {
+    id: string;
+    output?: unknown;
+}
+
+async function triggerAndPollWithLogs<TPayload extends Record<string, unknown>>(
+    taskName: string,
+    payload: TPayload,
+    context: { nodeId: string; nodeType: string }
+): Promise<TriggerRunLike> {
+    const startedAt = Date.now();
+    devLog('trigger.start', {
+        taskName,
+        nodeId: context.nodeId,
+        nodeType: context.nodeType,
+    });
+
+    try {
+        const run = await withTaskTimeout(
+            taskName,
+            (async () => {
+                const handle = await tasks.trigger(taskName, payload);
+                devLog('trigger.accepted', {
+                    taskName,
+                    nodeId: context.nodeId,
+                    nodeType: context.nodeType,
+                    runId: handle.id,
+                });
+
+                return runs.poll(handle.id, { pollIntervalMs: 1000 });
+            })()
+        );
+
+        if (!run.isSuccess) {
+            throw new WorkflowError(
+                `Task "${taskName}" failed`,
+                'TASK_FAILED',
+                502,
+                {
+                    taskName,
+                    triggerRunId: run.id,
+                    triggerStatus: run.status,
+                    triggerError: run.error ?? null,
+                }
+            );
+        }
+
+        devLog('trigger.success', {
+            taskName,
+            nodeId: context.nodeId,
+            nodeType: context.nodeType,
+            runId: run.id,
+            durationMs: Date.now() - startedAt,
+        });
+        return { id: run.id, output: run.output };
+    } catch (error) {
+        devLog('trigger.error', {
+            taskName,
+            nodeId: context.nodeId,
+            nodeType: context.nodeType,
+            durationMs: Date.now() - startedAt,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+    }
+}
+
 async function executeNode(
     node: CustomNode,
     inputs: Record<string, unknown>,
@@ -167,9 +248,10 @@ async function executeNode(
             const value = toStringValue(node.data.value) ?? '';
 
             if (useTrigger) {
-                const run = await withTaskTimeout(
+                const run = await triggerAndPollWithLogs(
                     'text-passthrough',
-                    tasks.triggerAndPoll('text-passthrough', { value })
+                    { value },
+                    { nodeId: node.id, nodeType: node.type }
                 );
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
@@ -200,9 +282,10 @@ async function executeNode(
             };
 
             if (useTrigger) {
-                const run = await withTaskTimeout(
+                const run = await triggerAndPollWithLogs(
                     'upload-image-passthrough',
-                    tasks.triggerAndPoll('upload-image-passthrough', payload)
+                    payload,
+                    { nodeId: node.id, nodeType: node.type }
                 );
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
@@ -234,9 +317,10 @@ async function executeNode(
             };
 
             if (useTrigger) {
-                const run = await withTaskTimeout(
+                const run = await triggerAndPollWithLogs(
                     'upload-video-passthrough',
-                    tasks.triggerAndPoll('upload-video-passthrough', payload)
+                    payload,
+                    { nodeId: node.id, nodeType: node.type }
                 );
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
@@ -259,7 +343,7 @@ async function executeNode(
         }
 
         case 'llm': {
-            const model = toStringValue(node.data.selectedModel) ?? 'gemini-2.0-flash-exp';
+            const model = toStringValue(node.data.selectedModel) ?? 'gemini-3-flash-preview';
             const systemPrompt = toStringValue(inputs.system_prompt);
             const userMessage = toStringValue(inputs.user_message);
             const imageUrls = Array.isArray(inputs.images)
@@ -271,14 +355,15 @@ async function executeNode(
             }
 
             if (process.env.TRIGGER_SECRET_KEY) {
-                const run = await withTaskTimeout(
+                const run = await triggerAndPollWithLogs(
                     'llm-execute',
-                    tasks.triggerAndPoll('llm-execute', {
+                    {
                         model,
                         systemPrompt,
                         userMessage,
                         imageUrls,
-                    })
+                    },
+                    { nodeId: node.id, nodeType: node.type }
                 );
 
                 const runOutput =
@@ -320,15 +405,16 @@ async function executeNode(
             }
 
             if (process.env.TRIGGER_SECRET_KEY) {
-                const run = await withTaskTimeout(
+                const run = await triggerAndPollWithLogs(
                     'crop-image',
-                    tasks.triggerAndPoll('crop-image', {
+                    {
                         imageUrl,
                         xPercent,
                         yPercent,
                         widthPercent,
                         heightPercent,
-                    })
+                    },
+                    { nodeId: node.id, nodeType: node.type }
                 );
 
                 const runOutput =
@@ -368,12 +454,13 @@ async function executeNode(
             }
 
             if (process.env.TRIGGER_SECRET_KEY) {
-                const run = await withTaskTimeout(
+                const run = await triggerAndPollWithLogs(
                     'extract-frame',
-                    tasks.triggerAndPoll('extract-frame', {
+                    {
                         videoUrl,
                         timestamp,
-                    })
+                    },
+                    { nodeId: node.id, nodeType: node.type }
                 );
 
                 const runOutput =
@@ -413,7 +500,7 @@ async function executeNode(
             const model =
                 toStringValue(inputs.model) ??
                 process.env.GOOGLE_IMAGE_MODEL ??
-                'gemini-2.0-flash-exp';
+                'gemini-2.5-flash-image';
             const referenceAUrl = toStringValue(inputs.reference_a);
             const referenceBUrl = toStringValue(inputs.reference_b);
 
@@ -430,14 +517,15 @@ async function executeNode(
             let triggerRunId: string | undefined;
 
             if (process.env.TRIGGER_SECRET_KEY) {
-                const run = await withTaskTimeout(
+                const run = await triggerAndPollWithLogs(
                     'generate-image',
-                    tasks.triggerAndPoll('generate-image', {
+                    {
                         model,
                         prompt,
                         referenceAUrl: referenceAUrl ?? undefined,
                         referenceBUrl: referenceBUrl ?? undefined,
-                    })
+                    },
+                    { nodeId: node.id, nodeType: node.type }
                 );
 
                 const runOutput =
@@ -663,6 +751,16 @@ export const POST = withErrorHandler(async (request: Request) => {
     }
 
     const executionLevels = getExecutionLevels(scopedGraph.nodes, scopedGraph.edges);
+    devLog('workflow.execution.start', {
+        workflowId,
+        scope,
+        selectedNodeIds,
+        levelCount: executionLevels.length,
+        nodeCount: scopedGraph.nodes.length,
+        edgeCount: scopedGraph.edges.length,
+        triggerEnabled: Boolean(process.env.TRIGGER_SECRET_KEY),
+        workflowTaskTimeoutMs: getWorkflowTaskTimeoutMs(),
+    });
 
     const runStart = Date.now();
     const init = await prisma.$transaction(async (tx) => {
@@ -706,7 +804,12 @@ export const POST = withErrorHandler(async (request: Request) => {
     let successCount = 0;
     let failureCount = 0;
 
-    for (const level of executionLevels) {
+    for (const [levelIndex, level] of executionLevels.entries()) {
+        devLog('workflow.execution.level.start', {
+            levelIndex,
+            nodeIds: level.map((node) => node.id),
+            nodeTypes: level.map((node) => node.type),
+        });
         const levelResults = await Promise.all(
             level.map(async (node) => {
                 const nodeRun = nodeRunByNodeId.get(node.id);
@@ -716,6 +819,11 @@ export const POST = withErrorHandler(async (request: Request) => {
 
                 const inputs = resolveNodeInputs(node, scopedGraph.edges, nodeOutputs, scopedGraph.nodes);
                 const nodeStart = Date.now();
+                devLog('workflow.execution.node.start', {
+                    levelIndex,
+                    nodeId: node.id,
+                    nodeType: node.type,
+                });
 
                 await prisma.nodeRun.update({
                     where: { id: nodeRun.id },
@@ -740,6 +848,13 @@ export const POST = withErrorHandler(async (request: Request) => {
                             taskName: outcome.taskName,
                             triggerRunId: outcome.triggerRunId,
                         },
+                    });
+
+                    devLog('workflow.execution.node.success', {
+                        levelIndex,
+                        nodeId: node.id,
+                        nodeType: node.type,
+                        durationMs: Date.now() - nodeStart,
                     });
 
                     return { success: true, nodeId: node.id };
@@ -774,6 +889,14 @@ export const POST = withErrorHandler(async (request: Request) => {
                         },
                     });
 
+                    devLog('workflow.execution.node.error', {
+                        levelIndex,
+                        nodeId: node.id,
+                        nodeType: node.type,
+                        durationMs: Date.now() - nodeStart,
+                        error: message,
+                    });
+
                     return { success: false, nodeId: node.id, error: message };
                 }
             })
@@ -789,6 +912,12 @@ export const POST = withErrorHandler(async (request: Request) => {
                 }
             }
         }
+
+        devLog('workflow.execution.level.done', {
+            levelIndex,
+            successCount,
+            failureCount,
+        });
     }
 
     const finalStatus =

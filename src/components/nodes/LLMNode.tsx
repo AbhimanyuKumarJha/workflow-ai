@@ -11,9 +11,10 @@ import { toast } from 'sonner';
 import { useHistoryStore } from '@/stores/history-store';
 
 const GEMINI_MODELS = [
-    { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
-    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+    { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ];
 
 export function LLMNode({ id, data, selected }: NodeProps) {
@@ -213,7 +214,7 @@ export function LLMNode({ id, data, selected }: NodeProps) {
                 <div className="mb-2">
                     <label className="text-xs text-text-secondary mb-1 block">Model</label>
                     <select
-                        value={nodeData.selectedModel || 'gemini-2.0-flash-exp'}
+                        value={nodeData.selectedModel || 'gemini-3-flash-preview'}
                         onChange={handleModelChange}
                         className="w-full p-2 text-sm bg-background border border-border rounded 
                             text-text-primary

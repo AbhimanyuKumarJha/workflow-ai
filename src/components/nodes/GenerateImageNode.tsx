@@ -11,8 +11,8 @@ import { useHistoryStore } from '@/stores/history-store';
 import { GenerateImageNodeData } from '@/lib/types';
 
 const IMAGE_MODELS = [
-    { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { value: 'gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image' },
+    { value: 'gemini-3-pro-image-preview', label: 'Gemini 3 Pro Image Preview' },
 ];
 
 function formatBytes(bytes?: number): string {

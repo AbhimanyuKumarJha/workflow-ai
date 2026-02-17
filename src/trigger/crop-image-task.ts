@@ -5,6 +5,7 @@ import { execa } from 'execa';
 import { task } from '@trigger.dev/sdk/v3';
 import { Transloadit } from 'transloadit';
 import { z } from 'zod';
+import { triggerDevLog } from './dev-log';
 
 const payloadSchema = z.object({
     imageUrl: z.string().url(),
@@ -45,84 +46,97 @@ function extractTransloaditUrl(assembly: unknown): string | undefined {
 export const cropImageTask = task({
     id: 'crop-image',
     run: async (input: unknown) => {
-        const payload = payloadSchema.parse(input);
-        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wf-crop-'));
-        const inputPath = path.join(tempDir, 'input');
-        const outputPath = path.join(tempDir, 'output.jpg');
+        triggerDevLog('crop-image', 'run.start');
 
         try {
-            const response = await fetch(payload.imageUrl);
-            if (!response.ok) {
-                throw new Error(`Failed to download image: ${response.status}`);
-            }
+            const payload = payloadSchema.parse(input);
+            const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wf-crop-'));
+            const inputPath = path.join(tempDir, 'input');
+            const outputPath = path.join(tempDir, 'output.jpg');
 
-            const bytes = Buffer.from(await response.arrayBuffer());
-            await fs.writeFile(inputPath, bytes);
+            try {
+                const response = await fetch(payload.imageUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to download image: ${response.status}`);
+                }
 
-            const probe = await execa('ffprobe', [
-                '-v',
-                'error',
-                '-select_streams',
-                'v:0',
-                '-show_entries',
-                'stream=width,height',
-                '-of',
-                'csv=s=x:p=0',
-                inputPath,
-            ]);
+                const bytes = Buffer.from(await response.arrayBuffer());
+                await fs.writeFile(inputPath, bytes);
 
-            const [width, height] = probe.stdout.trim().split('x').map(Number);
-            if (!Number.isFinite(width) || !Number.isFinite(height)) {
-                throw new Error('Could not determine image dimensions');
-            }
+                const probe = await execa('ffprobe', [
+                    '-v',
+                    'error',
+                    '-select_streams',
+                    'v:0',
+                    '-show_entries',
+                    'stream=width,height',
+                    '-of',
+                    'csv=s=x:p=0',
+                    inputPath,
+                ]);
 
-            const cropX = Math.max(0, Math.floor(width * (payload.xPercent / 100)));
-            const cropY = Math.max(0, Math.floor(height * (payload.yPercent / 100)));
-            const cropWidth = Math.max(1, Math.floor(width * (payload.widthPercent / 100)));
-            const cropHeight = Math.max(1, Math.floor(height * (payload.heightPercent / 100)));
+                const [width, height] = probe.stdout.trim().split('x').map(Number);
+                if (!Number.isFinite(width) || !Number.isFinite(height)) {
+                    throw new Error('Could not determine image dimensions');
+                }
 
-            await execa('ffmpeg', [
-                '-y',
-                '-i',
-                inputPath,
-                '-vf',
-                `crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}`,
-                outputPath,
-            ]);
+                const cropX = Math.max(0, Math.floor(width * (payload.xPercent / 100)));
+                const cropY = Math.max(0, Math.floor(height * (payload.yPercent / 100)));
+                const cropWidth = Math.max(1, Math.floor(width * (payload.widthPercent / 100)));
+                const cropHeight = Math.max(1, Math.floor(height * (payload.heightPercent / 100)));
 
-            const authKey =
-                process.env.TRANSLOADIT_AUTH_KEY ?? process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY;
-            const authSecret = process.env.TRANSLOADIT_AUTH_SECRET;
-            const templateId = process.env.TRANSLOADIT_TEMPLATE_ID_IMAGE;
+                await execa('ffmpeg', [
+                    '-y',
+                    '-i',
+                    inputPath,
+                    '-vf',
+                    `crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}`,
+                    outputPath,
+                ]);
 
-            if (!authKey || !authSecret || !templateId) {
-                return {
-                    croppedUrl: payload.imageUrl,
-                    note: 'Returned source image because Transloadit credentials are not configured.',
+                const authKey =
+                    process.env.TRANSLOADIT_AUTH_KEY ?? process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY;
+                const authSecret = process.env.TRANSLOADIT_AUTH_SECRET;
+                const templateId = process.env.TRANSLOADIT_TEMPLATE_ID_IMAGE;
+
+                if (!authKey || !authSecret || !templateId) {
+                    const output = {
+                        croppedUrl: payload.imageUrl,
+                        note: 'Returned source image because Transloadit credentials are not configured.',
+                    };
+                    triggerDevLog('crop-image', 'run.success');
+                    return output;
+                }
+
+                const transloadit = new Transloadit({
+                    authKey,
+                    authSecret,
+                });
+
+                const assembly = await transloadit.createAssembly({
+                    files: {
+                        file: outputPath,
+                    },
+                    params: {
+                        template_id: templateId,
+                    },
+                    waitForCompletion: true,
+                });
+
+                const uploadedUrl = extractTransloaditUrl(assembly);
+                const output = {
+                    croppedUrl: uploadedUrl ?? payload.imageUrl,
                 };
+                triggerDevLog('crop-image', 'run.success');
+                return output;
+            } finally {
+                await fs.rm(tempDir, { recursive: true, force: true });
             }
-
-            const transloadit = new Transloadit({
-                authKey,
-                authSecret,
+        } catch (error) {
+            triggerDevLog('crop-image', 'run.error', {
+                error: error instanceof Error ? error.message : String(error),
             });
-
-            const assembly = await transloadit.createAssembly({
-                files: {
-                    file: outputPath,
-                },
-                params: {
-                    template_id: templateId,
-                },
-                waitForCompletion: true,
-            });
-
-            const uploadedUrl = extractTransloaditUrl(assembly);
-            return {
-                croppedUrl: uploadedUrl ?? payload.imageUrl,
-            };
-        } finally {
-            await fs.rm(tempDir, { recursive: true, force: true });
+            throw error;
         }
     },
 });

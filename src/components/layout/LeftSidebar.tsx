@@ -113,7 +113,7 @@ export function LeftSidebar() {
             case 'llm':
                 return {
                     label: 'Run Any LLM',
-                    selectedModel: 'gemini-2.0-flash-exp',
+                    selectedModel: 'gemini-3-flash-preview',
                     systemPrompt: '',
                     userMessage: '',
                 };
@@ -134,7 +134,7 @@ export function LeftSidebar() {
                 return {
                     label: 'Generate Image',
                     prompt: '',
-                    model: 'gemini-2.0-flash-exp',
+                    model: 'gemini-2.5-flash-image',
                 };
             case 'export_text':
                 return {

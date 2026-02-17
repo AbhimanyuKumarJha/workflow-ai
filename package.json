@@ -15,8 +15,8 @@
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
     "@tailwindcss/postcss": "^4.1.0",
-    "@trigger.dev/react-hooks": "^3.0.0",
-    "@trigger.dev/sdk": "^3.0.0",
+    "@trigger.dev/react-hooks": "4.3.3",
+    "@trigger.dev/sdk": "4.3.3",
     "@uppy/core": "^4.3.1",
     "@uppy/dashboard": "^4.2.0",
     "@uppy/react": "^4.1.0",
@@ -39,7 +39,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "@trigger.dev/build": "^3.0.0",
+    "@trigger.dev/build": "4.3.3",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.2",

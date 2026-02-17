@@ -69,7 +69,7 @@ function WorkflowCanvasInner() {
                 return {
                     ...baseData,
                     label: 'Run Any LLM',
-                    selectedModel: 'gemini-2.0-flash-exp',
+                    selectedModel: 'gemini-3-flash-preview',
                     systemPrompt: '',
                     userMessage: '',
                 };
@@ -93,7 +93,7 @@ function WorkflowCanvasInner() {
                     ...baseData,
                     label: 'Generate Image',
                     prompt: '',
-                    model: 'gemini-2.0-flash-exp',
+                    model: 'gemini-2.5-flash-image',
                 };
             case 'export_text':
                 return { ...baseData, label: 'Export Text' };

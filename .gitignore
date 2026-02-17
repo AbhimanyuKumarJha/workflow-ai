@@ -39,3 +39,7 @@ next-env.d.ts
 
 # Prisma
 prisma/migrations/
+
+#Dev
+.trigger/
+.vscode/
