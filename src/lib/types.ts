@@ -74,6 +74,48 @@ export interface ExtractFrameNodeData extends BaseNodeData {
     extractedFrameUrl?: string;
 }
 
+export interface GenerateImageNodeData extends BaseNodeData {
+    prompt?: string;
+    model?: string;
+    imageUrl?: string;
+    assetId?: string;
+    publicId?: string;
+    provider?: string;
+    mimeType?: string;
+    bytes?: number;
+    width?: number;
+    height?: number;
+}
+
+export interface ExportTextNodeData extends BaseNodeData {
+    text?: string;
+    value?: string;
+    format?: 'txt';
+}
+
+export interface ExportImageNodeData extends BaseNodeData {
+    imageUrl?: string;
+    assetId?: string;
+    publicId?: string;
+    provider?: string;
+    mimeType?: string;
+    bytes?: number;
+    width?: number;
+    height?: number;
+}
+
+export interface ExportVideoNodeData extends BaseNodeData {
+    videoUrl?: string;
+    assetId?: string;
+    publicId?: string;
+    provider?: string;
+    mimeType?: string;
+    bytes?: number;
+    width?: number;
+    height?: number;
+    durationMs?: number;
+}
+
 export type CustomNodeData = Record<string, unknown> &
     (
         | TextNodeData
@@ -82,6 +124,10 @@ export type CustomNodeData = Record<string, unknown> &
         | LLMNodeData
         | CropImageNodeData
         | ExtractFrameNodeData
+        | GenerateImageNodeData
+        | ExportTextNodeData
+        | ExportImageNodeData
+        | ExportVideoNodeData
     );
 
 export type CustomNode = Node<CustomNodeData>;

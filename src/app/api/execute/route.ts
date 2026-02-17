@@ -2,6 +2,7 @@ import { NodeType, Prisma } from '@prisma/client';
 import { tasks } from '@trigger.dev/sdk/v3';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserOrThrow } from '@/lib/current-user';
+import { persistDurableAssetFromUrl } from '@/lib/assets';
 import { CustomEdge, CustomNode } from '@/lib/types';
 import {
     getExecutionLevels,
@@ -16,6 +17,19 @@ interface NodeExecutionOutcome {
     outputs: Record<string, unknown>;
     taskName?: string;
     triggerRunId?: string;
+}
+
+const DEFAULT_WORKFLOW_TASK_TIMEOUT_MS = 120_000;
+
+function getWorkflowTaskTimeoutMs(): number {
+    const raw = process.env.WORKFLOW_TASK_TIMEOUT_MS;
+    const parsed = raw ? Number(raw) : NaN;
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+        return Math.floor(parsed);
+    }
+
+    return DEFAULT_WORKFLOW_TASK_TIMEOUT_MS;
 }
 
 function toStringValue(value: unknown): string | undefined {
@@ -54,6 +68,10 @@ function toPrismaNodeType(nodeType: string): NodeType {
         llm: NodeType.LLM,
         crop_image: NodeType.CROP_IMAGE,
         extract_frame: NodeType.EXTRACT_FRAME,
+        generate_image: NodeType.GENERATE_IMAGE,
+        export_text: NodeType.EXPORT_TEXT,
+        export_image: NodeType.EXPORT_IMAGE,
+        export_video: NodeType.EXPORT_VIDEO,
     };
 
     const result = mapping[nodeType];
@@ -64,9 +82,83 @@ function toPrismaNodeType(nodeType: string): NodeType {
     return result;
 }
 
+function inferMediaFromUrl(url: string): 'image' | 'video' | undefined {
+    const lower = url.toLowerCase();
+    if (lower.startsWith('data:image/')) {
+        return 'image';
+    }
+    if (lower.startsWith('data:video/')) {
+        return 'video';
+    }
+    const normalized = lower.split('?')[0].split('#')[0];
+
+    if (
+        normalized.endsWith('.jpg') ||
+        normalized.endsWith('.jpeg') ||
+        normalized.endsWith('.png') ||
+        normalized.endsWith('.webp') ||
+        normalized.endsWith('.gif') ||
+        normalized.endsWith('.avif')
+    ) {
+        return 'image';
+    }
+
+    if (
+        normalized.endsWith('.mp4') ||
+        normalized.endsWith('.mov') ||
+        normalized.endsWith('.webm') ||
+        normalized.endsWith('.m4v') ||
+        normalized.endsWith('.avi') ||
+        normalized.endsWith('.mkv')
+    ) {
+        return 'video';
+    }
+
+    return undefined;
+}
+
+function isExpectedMedia(uploadType: 'image' | 'video', input: { mimeType?: string; url?: string }): boolean {
+    const normalizedMime = typeof input.mimeType === 'string' ? input.mimeType.toLowerCase() : '';
+    const inferred = typeof input.url === 'string' ? inferMediaFromUrl(input.url) : undefined;
+
+    if (uploadType === 'image') {
+        return normalizedMime.startsWith('image/') || inferred === 'image';
+    }
+
+    return normalizedMime.startsWith('video/') || inferred === 'video';
+}
+
+async function withTaskTimeout<T>(taskName: string, taskPromise: Promise<T>): Promise<T> {
+    const timeoutMs = getWorkflowTaskTimeoutMs();
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+        return await Promise.race([
+            taskPromise,
+            new Promise<T>((_, reject) => {
+                timeoutHandle = setTimeout(() => {
+                    reject(
+                        new WorkflowError(
+                            `Task "${taskName}" timed out after ${timeoutMs}ms`,
+                            'TASK_TIMEOUT',
+                            504,
+                            { taskName, timeoutMs }
+                        )
+                    );
+                }, timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+        }
+    }
+}
+
 async function executeNode(
     node: CustomNode,
-    inputs: Record<string, unknown>
+    inputs: Record<string, unknown>,
+    userId: string
 ): Promise<NodeExecutionOutcome> {
     const useTrigger = !!process.env.TRIGGER_SECRET_KEY;
 
@@ -75,7 +167,10 @@ async function executeNode(
             const value = toStringValue(node.data.value) ?? '';
 
             if (useTrigger) {
-                const run = await tasks.triggerAndPoll('text-passthrough', { value });
+                const run = await withTaskTimeout(
+                    'text-passthrough',
+                    tasks.triggerAndPoll('text-passthrough', { value })
+                );
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
                         ? (run.output as Record<string, unknown>)
@@ -105,7 +200,10 @@ async function executeNode(
             };
 
             if (useTrigger) {
-                const run = await tasks.triggerAndPoll('upload-image-passthrough', payload);
+                const run = await withTaskTimeout(
+                    'upload-image-passthrough',
+                    tasks.triggerAndPoll('upload-image-passthrough', payload)
+                );
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
                         ? (run.output as Record<string, unknown>)
@@ -136,7 +234,10 @@ async function executeNode(
             };
 
             if (useTrigger) {
-                const run = await tasks.triggerAndPoll('upload-video-passthrough', payload);
+                const run = await withTaskTimeout(
+                    'upload-video-passthrough',
+                    tasks.triggerAndPoll('upload-video-passthrough', payload)
+                );
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
                         ? (run.output as Record<string, unknown>)
@@ -170,12 +271,15 @@ async function executeNode(
             }
 
             if (process.env.TRIGGER_SECRET_KEY) {
-                const run = await tasks.triggerAndPoll('llm-execute', {
-                    model,
-                    systemPrompt,
-                    userMessage,
-                    imageUrls,
-                });
+                const run = await withTaskTimeout(
+                    'llm-execute',
+                    tasks.triggerAndPoll('llm-execute', {
+                        model,
+                        systemPrompt,
+                        userMessage,
+                        imageUrls,
+                    })
+                );
 
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
@@ -216,13 +320,16 @@ async function executeNode(
             }
 
             if (process.env.TRIGGER_SECRET_KEY) {
-                const run = await tasks.triggerAndPoll('crop-image', {
-                    imageUrl,
-                    xPercent,
-                    yPercent,
-                    widthPercent,
-                    heightPercent,
-                });
+                const run = await withTaskTimeout(
+                    'crop-image',
+                    tasks.triggerAndPoll('crop-image', {
+                        imageUrl,
+                        xPercent,
+                        yPercent,
+                        widthPercent,
+                        heightPercent,
+                    })
+                );
 
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
@@ -261,10 +368,13 @@ async function executeNode(
             }
 
             if (process.env.TRIGGER_SECRET_KEY) {
-                const run = await tasks.triggerAndPoll('extract-frame', {
-                    videoUrl,
-                    timestamp,
-                });
+                const run = await withTaskTimeout(
+                    'extract-frame',
+                    tasks.triggerAndPoll('extract-frame', {
+                        videoUrl,
+                        timestamp,
+                    })
+                );
 
                 const runOutput =
                     (typeof run.output === 'object' && run.output !== null
@@ -294,6 +404,195 @@ async function executeNode(
                     extractedFrameUrl: fallbackImage,
                     frameUrl: fallbackImage,
                     imageUrl: fallbackImage,
+                },
+            };
+        }
+
+        case 'generate_image': {
+            const prompt = toStringValue(inputs.prompt);
+            const model =
+                toStringValue(inputs.model) ??
+                process.env.GOOGLE_IMAGE_MODEL ??
+                'gemini-2.0-flash-exp';
+            const referenceAUrl = toStringValue(inputs.reference_a);
+            const referenceBUrl = toStringValue(inputs.reference_b);
+
+            if (!prompt) {
+                throw new WorkflowError(
+                    'Generate Image node requires a prompt input',
+                    'MISSING_INPUT',
+                    400
+                );
+            }
+
+            let generatedImageSourceUrl: string | undefined;
+            let generatedMimeType: string | undefined;
+            let triggerRunId: string | undefined;
+
+            if (process.env.TRIGGER_SECRET_KEY) {
+                const run = await withTaskTimeout(
+                    'generate-image',
+                    tasks.triggerAndPoll('generate-image', {
+                        model,
+                        prompt,
+                        referenceAUrl: referenceAUrl ?? undefined,
+                        referenceBUrl: referenceBUrl ?? undefined,
+                    })
+                );
+
+                const runOutput =
+                    (typeof run.output === 'object' && run.output !== null
+                        ? (run.output as Record<string, unknown>)
+                        : {}) ?? {};
+
+                generatedImageSourceUrl =
+                    toStringValue(runOutput.generatedImageDataUrl) ??
+                    toStringValue(runOutput.imageUrl) ??
+                    toStringValue(runOutput.url);
+                generatedMimeType = toStringValue(runOutput.mimeType);
+                triggerRunId = run.id;
+
+                if (!generatedImageSourceUrl) {
+                    throw new WorkflowError(
+                        'Image generation task did not return an image payload',
+                        'INVALID_GENERATION_OUTPUT',
+                        502
+                    );
+                }
+            } else {
+                const fallbackText = encodeURIComponent(`Generated: ${prompt.slice(0, 80)}`);
+                generatedImageSourceUrl =
+                    `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="%230f172a"/><stop offset="100%" stop-color="%232563eb"/></linearGradient></defs><rect width="1024" height="1024" fill="url(%23g)"/><text x="50%" y="50%" fill="%23e2e8f0" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="36">${fallbackText}</text></svg>`;
+                generatedMimeType = 'image/svg+xml';
+            }
+
+            const durable = await persistDurableAssetFromUrl({
+                userId,
+                uploadType: 'image',
+                sourceUrl: generatedImageSourceUrl,
+                existingMimeType: generatedMimeType,
+            });
+
+            return {
+                outputs: {
+                    url: durable.url,
+                    imageUrl: durable.url,
+                    sourceUrl: generatedImageSourceUrl,
+                    prompt,
+                    model,
+                    provider: durable.provider,
+                    assetId: durable.asset.id,
+                    publicId: durable.publicId,
+                    mimeType: durable.mimeType,
+                    bytes: durable.bytes,
+                    width: durable.width,
+                    height: durable.height,
+                },
+                taskName: process.env.TRIGGER_SECRET_KEY ? 'generate-image' : undefined,
+                triggerRunId,
+            };
+        }
+
+        case 'export_text': {
+            const text = toStringValue(inputs.text);
+            if (!text) {
+                throw new WorkflowError(
+                    'Export Text node requires a text input',
+                    'MISSING_INPUT',
+                    400
+                );
+            }
+
+            return {
+                outputs: {
+                    text,
+                    value: text,
+                    format: 'txt',
+                },
+            };
+        }
+
+        case 'export_image': {
+            const sourceUrl = toStringValue(inputs.image);
+            const mimeType = toStringValue(inputs.mimeType);
+            if (!sourceUrl) {
+                throw new WorkflowError(
+                    'Export Image node requires an image input',
+                    'MISSING_INPUT',
+                    400
+                );
+            }
+
+            if (!isExpectedMedia('image', { mimeType, url: sourceUrl })) {
+                throw new WorkflowError(
+                    'Export Image node received a non-image input',
+                    'INVALID_MEDIA_TYPE',
+                    400
+                );
+            }
+
+            const durable = await persistDurableAssetFromUrl({
+                userId,
+                uploadType: 'image',
+                sourceUrl,
+                existingMimeType: mimeType,
+            });
+
+            return {
+                outputs: {
+                    url: durable.url,
+                    imageUrl: durable.url,
+                    sourceUrl,
+                    provider: durable.provider,
+                    assetId: durable.asset.id,
+                    publicId: durable.publicId,
+                    mimeType: durable.mimeType,
+                    bytes: durable.bytes,
+                    width: durable.width,
+                    height: durable.height,
+                },
+            };
+        }
+
+        case 'export_video': {
+            const sourceUrl = toStringValue(inputs.video);
+            const mimeType = toStringValue(inputs.mimeType);
+            if (!sourceUrl) {
+                throw new WorkflowError(
+                    'Export Video node requires a video input',
+                    'MISSING_INPUT',
+                    400
+                );
+            }
+
+            if (!isExpectedMedia('video', { mimeType, url: sourceUrl })) {
+                throw new WorkflowError(
+                    'Export Video node received a non-video input',
+                    'INVALID_MEDIA_TYPE',
+                    400
+                );
+            }
+
+            const durable = await persistDurableAssetFromUrl({
+                userId,
+                uploadType: 'video',
+                sourceUrl,
+                existingMimeType: mimeType,
+            });
+
+            return {
+                outputs: {
+                    url: durable.url,
+                    videoUrl: durable.url,
+                    sourceUrl,
+                    provider: durable.provider,
+                    assetId: durable.asset.id,
+                    publicId: durable.publicId,
+                    mimeType: durable.mimeType,
+                    bytes: durable.bytes,
+                    width: durable.width,
+                    height: durable.height,
+                    durationMs: durable.durationMs,
                 },
             };
         }
@@ -341,6 +640,22 @@ export const POST = withErrorHandler(async (request: Request) => {
     const scopedGraph = getSubgraphForScope(allNodes, allEdges, scope, selectedNodeIds);
     if (!scopedGraph.nodes.length) {
         throw new WorkflowError('No nodes available for the selected execution scope', 'INVALID_SCOPE', 400);
+    }
+
+    if (
+        scope === 'FULL' &&
+        !scopedGraph.nodes.some(
+            (node) =>
+                node.type === 'export_text' ||
+                node.type === 'export_image' ||
+                node.type === 'export_video'
+        )
+    ) {
+        throw new WorkflowError(
+            'Add at least one Export Text, Export Image, or Export Video node before running the full workflow.',
+            'MISSING_EXPORT_NODE',
+            400
+        );
     }
 
     if (!validateDAG(scopedGraph.nodes, scopedGraph.edges)) {
@@ -412,7 +727,7 @@ export const POST = withErrorHandler(async (request: Request) => {
                 });
 
                 try {
-                    const outcome = await executeNode(node, inputs);
+                    const outcome = await executeNode(node, inputs, user.id);
                     nodeOutputs.set(node.id, outcome.outputs);
 
                     await prisma.nodeRun.update({
@@ -430,14 +745,23 @@ export const POST = withErrorHandler(async (request: Request) => {
                     return { success: true, nodeId: node.id };
                 } catch (error) {
                     const message = error instanceof Error ? error.message : 'Execution failed';
-                    const errorDetails = error instanceof Error
-                        ? {
-                            name: error.name,
-                            stack: error.stack ?? null,
-                        }
-                        : {
-                            message: String(error),
-                        };
+                    const errorDetails =
+                        error instanceof WorkflowError
+                            ? {
+                                name: error.name,
+                                code: error.code,
+                                status: error.status,
+                                details: error.details ?? null,
+                                stack: error.stack ?? null,
+                            }
+                            : error instanceof Error
+                                ? {
+                                    name: error.name,
+                                    stack: error.stack ?? null,
+                                }
+                                : {
+                                    message: String(error),
+                                };
 
                     await prisma.nodeRun.update({
                         where: { id: nodeRun.id },

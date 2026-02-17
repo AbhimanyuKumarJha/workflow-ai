@@ -9,6 +9,10 @@ import {
     Crop,
     Scissors,
     Search,
+    ImageDown,
+    Download,
+    Sparkles,
+    FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUIStore } from '@/stores/ui-store';
@@ -59,12 +63,37 @@ const nodeTypes: NodeTypeButton[] = [
         icon: Scissors,
         description: 'Extract frame from video',
     },
+    {
+        type: 'generate_image',
+        label: 'Generate Image',
+        icon: Sparkles,
+        description: 'Generate or edit image with prompt',
+    },
+    {
+        type: 'export_text',
+        label: 'Export Text',
+        icon: FileText,
+        description: 'Export final text output',
+    },
+    {
+        type: 'export_image',
+        label: 'Export Image',
+        icon: ImageDown,
+        description: 'Persist final image output',
+    },
+    {
+        type: 'export_video',
+        label: 'Export Video',
+        icon: Download,
+        description: 'Persist final video output',
+    },
 ];
 
 export function LeftSidebar() {
     const leftSidebarOpen = useUIStore((state) => state.leftSidebarOpen);
     const addNode = useWorkflowStore((state) => state.addNode);
     const viewport = useWorkflowStore((state) => state.viewport);
+    const nodeCount = useWorkflowStore((state) => state.nodes.length);
     const [searchQuery, setSearchQuery] = useState('');
 
     const filteredNodeTypes = nodeTypes.filter(
@@ -101,6 +130,24 @@ export function LeftSidebar() {
                     label: 'Extract Frame',
                     timestamp: 0,
                 };
+            case 'generate_image':
+                return {
+                    label: 'Generate Image',
+                    prompt: '',
+                    model: 'gemini-2.0-flash-exp',
+                };
+            case 'export_text':
+                return {
+                    label: 'Export Text',
+                };
+            case 'export_image':
+                return {
+                    label: 'Export Image',
+                };
+            case 'export_video':
+                return {
+                    label: 'Export Video',
+                };
             default:
                 return { label: 'Unknown Node' };
         }
@@ -111,9 +158,10 @@ export function LeftSidebar() {
         const centerX = (-viewport.x + window.innerWidth / 2) / viewport.zoom;
         const centerY = (-viewport.y + window.innerHeight / 2) / viewport.zoom;
 
-        // Add some random jitter so nodes don't stack exactly on top of each other
-        const jitterX = (Math.random() - 0.5) * 100;
-        const jitterY = (Math.random() - 0.5) * 100;
+        // Add deterministic jitter so nodes don't stack exactly on top of each other
+        const jitterSeed = nodeCount % 10;
+        const jitterX = ((jitterSeed % 5) - 2) * 24;
+        const jitterY = (Math.floor(jitterSeed / 5) - 1) * 24;
 
         const data = getDefaultNodeData(nodeType);
         addNode(nodeType, { x: centerX + jitterX, y: centerY + jitterY }, data);

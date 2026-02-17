@@ -242,6 +242,14 @@ function getPrimaryOutputValue(sourceNode: CustomNode, output: Record<string, un
             return output.croppedUrl ?? output.imageUrl ?? sourceNode.data.croppedUrl;
         case 'extract_frame':
             return output.frameUrl ?? output.extractedFrameUrl ?? sourceNode.data.extractedFrameUrl;
+        case 'generate_image':
+            return output.imageUrl ?? output.url ?? sourceNode.data.imageUrl;
+        case 'export_text':
+            return output.text ?? output.value ?? sourceNode.data.text ?? sourceNode.data.value;
+        case 'export_image':
+            return output.imageUrl ?? output.url ?? sourceNode.data.imageUrl;
+        case 'export_video':
+            return output.videoUrl ?? output.url ?? sourceNode.data.videoUrl;
         default:
             return output;
     }
@@ -274,6 +282,12 @@ export function resolveNodeInputs(
         }
 
         inputs[edge.targetHandle] = value;
+
+        if (node.type === 'export_image' || node.type === 'export_video') {
+            if (inputs.mimeType === undefined && sourceOutput.mimeType !== undefined) {
+                inputs.mimeType = sourceOutput.mimeType;
+            }
+        }
     }
 
     if (node.type === 'llm') {
@@ -304,6 +318,33 @@ export function resolveNodeInputs(
         }
         if (inputs.timestamp === undefined) {
             inputs.timestamp = node.data.timestamp ?? 0;
+        }
+    }
+
+    if (node.type === 'generate_image') {
+        if (inputs.prompt === undefined) {
+            inputs.prompt = node.data.prompt;
+        }
+        if (inputs.model === undefined) {
+            inputs.model = node.data.model;
+        }
+    }
+
+    if (node.type === 'export_text') {
+        if (inputs.text === undefined) {
+            inputs.text = node.data.text ?? node.data.value;
+        }
+    }
+
+    if (node.type === 'export_image') {
+        if (inputs.image === undefined) {
+            inputs.image = node.data.imageUrl;
+        }
+    }
+
+    if (node.type === 'export_video') {
+        if (inputs.video === undefined) {
+            inputs.video = node.data.videoUrl;
         }
     }
 

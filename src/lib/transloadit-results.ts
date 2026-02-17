@@ -46,25 +46,32 @@ export function isCloudinaryUrl(url: string): boolean {
 
 function inferFromUrl(url: string): 'image' | 'video' | undefined {
     const lower = url.toLowerCase();
+    if (lower.startsWith('data:image/')) {
+        return 'image';
+    }
+    if (lower.startsWith('data:video/')) {
+        return 'video';
+    }
+    const normalized = lower.split('?')[0].split('#')[0];
 
     if (
-        lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png') ||
-        lower.endsWith('.webp') ||
-        lower.endsWith('.gif') ||
-        lower.endsWith('.avif')
+        normalized.endsWith('.jpg') ||
+        normalized.endsWith('.jpeg') ||
+        normalized.endsWith('.png') ||
+        normalized.endsWith('.webp') ||
+        normalized.endsWith('.gif') ||
+        normalized.endsWith('.avif')
     ) {
         return 'image';
     }
 
     if (
-        lower.endsWith('.mp4') ||
-        lower.endsWith('.mov') ||
-        lower.endsWith('.webm') ||
-        lower.endsWith('.m4v') ||
-        lower.endsWith('.avi') ||
-        lower.endsWith('.mkv')
+        normalized.endsWith('.mp4') ||
+        normalized.endsWith('.mov') ||
+        normalized.endsWith('.webm') ||
+        normalized.endsWith('.m4v') ||
+        normalized.endsWith('.avi') ||
+        normalized.endsWith('.mkv')
     ) {
         return 'video';
     }

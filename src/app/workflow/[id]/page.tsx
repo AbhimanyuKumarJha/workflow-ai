@@ -10,7 +10,7 @@ import { useWorkflowStore } from '@/stores/workflow-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { useExecutionStatus } from '@/hooks/useExecutionStatus';
-import { CustomNode } from '@/lib/types';
+import { CustomEdge, CustomNode, WorkflowSnapshot } from '@/lib/types';
 
 interface ResolveMediaResponse {
     assemblyId: string;
@@ -60,6 +60,109 @@ function isExpectedMedia(uploadType: 'image' | 'video', mimeType?: string, url?:
     return normalizedMime.startsWith('video/') || inferred === 'video';
 }
 
+function withUniqueId(base: string, used: Set<string>): string {
+    let value = base;
+    let suffix = 1;
+
+    while (used.has(value)) {
+        value = `${base}-${suffix}`;
+        suffix += 1;
+    }
+
+    used.add(value);
+    return value;
+}
+
+function migrateLegacyWorkflowWithExportNodes(
+    nodes: CustomNode[],
+    edges: CustomEdge[],
+    viewport: WorkflowSnapshot['viewport']
+): { snapshot: WorkflowSnapshot; addedCount: number } {
+    if (
+        nodes.some(
+            (node) =>
+                node.type === 'export_text' ||
+                node.type === 'export_image' ||
+                node.type === 'export_video'
+        )
+    ) {
+        return {
+            snapshot: { nodes, edges, viewport },
+            addedCount: 0,
+        };
+    }
+
+    const imageProducerTypes = new Set(['upload_image', 'crop_image', 'extract_frame', 'generate_image']);
+    const videoProducerTypes = new Set(['upload_video']);
+    const outgoing = new Map<string, number>();
+
+    for (const edge of edges) {
+        outgoing.set(edge.source, (outgoing.get(edge.source) ?? 0) + 1);
+    }
+
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edgeIds = new Set(edges.map((edge) => edge.id));
+    const nextNodes = [...nodes];
+    const nextEdges = [...edges];
+    let addedCount = 0;
+
+    for (const node of nodes) {
+        if ((outgoing.get(node.id) ?? 0) > 0) {
+            continue;
+        }
+
+        let exportType: 'export_image' | 'export_video' | null = null;
+        let targetHandle: 'image' | 'video' | null = null;
+        if (imageProducerTypes.has(node.type ?? '')) {
+            exportType = 'export_image';
+            targetHandle = 'image';
+        } else if (videoProducerTypes.has(node.type ?? '')) {
+            exportType = 'export_video';
+            targetHandle = 'video';
+        }
+
+        if (!exportType || !targetHandle) {
+            continue;
+        }
+
+        const exportNodeId = withUniqueId(`node-export-${node.id}`, nodeIds);
+        const edgeId = withUniqueId(`edge-${node.id}-${exportNodeId}`, edgeIds);
+        const yOffset = addedCount % 2 === 0 ? -80 : 80;
+
+        nextNodes.push({
+            id: exportNodeId,
+            type: exportType,
+            position: {
+                x: node.position.x + 340,
+                y: node.position.y + yOffset,
+            },
+            data: {
+                label: exportType === 'export_image' ? 'Export Image' : 'Export Video',
+            },
+        });
+
+        nextEdges.push({
+            id: edgeId,
+            source: node.id,
+            sourceHandle: 'output',
+            target: exportNodeId,
+            targetHandle,
+            type: 'custom',
+        });
+
+        addedCount += 1;
+    }
+
+    return {
+        snapshot: {
+            nodes: nextNodes,
+            edges: nextEdges,
+            viewport,
+        },
+        addedCount,
+    };
+}
+
 export default function WorkflowEditorPage() {
     const params = useParams<{ id: string }>();
     const routeId = params?.id as string;
@@ -107,7 +210,16 @@ export default function WorkflowEditorPage() {
                 }
 
                 const state = useWorkflowStore.getState();
-                const uploadNodes = state.nodes.filter((node) => {
+                const migrated = migrateLegacyWorkflowWithExportNodes(
+                    state.nodes as CustomNode[],
+                    state.edges as CustomEdge[],
+                    state.viewport
+                );
+                if (migrated.addedCount > 0) {
+                    state.applySnapshot(migrated.snapshot, { markDirty: true });
+                }
+
+                const uploadNodes = migrated.snapshot.nodes.filter((node) => {
                     if (node.type !== 'upload_image' && node.type !== 'upload_video') {
                         return false;
                     }
@@ -227,8 +339,19 @@ export default function WorkflowEditorPage() {
                     }
                 }
 
-                if (recoveredCount > 0) {
+                if (migrated.addedCount > 0 || recoveredCount > 0) {
                     await state.saveWorkflow();
+                }
+
+                if (migrated.addedCount > 0) {
+                    toast.success(
+                        migrated.addedCount === 1
+                            ? 'Added 1 missing export node'
+                            : `Added ${migrated.addedCount} missing export nodes`
+                    );
+                }
+
+                if (recoveredCount > 0) {
                     toast.success(
                         recoveredCount === 1
                             ? 'Recovered 1 stale uploaded asset'

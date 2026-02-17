@@ -88,6 +88,19 @@ function WorkflowCanvasInner() {
                     label: 'Extract Frame',
                     timestamp: 0,
                 };
+            case 'generate_image':
+                return {
+                    ...baseData,
+                    label: 'Generate Image',
+                    prompt: '',
+                    model: 'gemini-2.0-flash-exp',
+                };
+            case 'export_text':
+                return { ...baseData, label: 'Export Text' };
+            case 'export_image':
+                return { ...baseData, label: 'Export Image' };
+            case 'export_video':
+                return { ...baseData, label: 'Export Video' };
             default:
                 return { ...baseData, label: 'Unknown Node' };
         }
@@ -379,6 +392,14 @@ function WorkflowCanvasInner() {
                             case 'crop_image':
                             case 'extract_frame':
                                 return '#f59e0b';
+                            case 'generate_image':
+                                return '#34d399';
+                            case 'export_text':
+                                return '#60a5fa';
+                            case 'export_image':
+                                return '#22c55e';
+                            case 'export_video':
+                                return '#a855f7';
                             default:
                                 return '#6b7280';
                         }

@@ -25,6 +25,13 @@ interface ApplySnapshotOptions {
     markDirty?: boolean;
 }
 
+interface NodeRunOutputPatch {
+    nodeId: string;
+    status?: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+    outputs?: Record<string, unknown> | null;
+    errorMessage?: string | null;
+}
+
 interface WorkflowState {
     workflowId: string | null;
     workflowName: string;
@@ -62,6 +69,7 @@ interface WorkflowState {
     exportJSON: () => string;
     importJSON: (json: string) => void;
     applySnapshot: (snapshot: WorkflowSnapshot, options?: ApplySnapshotOptions) => void;
+    applyNodeRunOutputs: (nodeRuns: NodeRunOutputPatch[]) => void;
     resetWorkflow: () => void;
 }
 
@@ -107,6 +115,30 @@ function generateNodeId(): string {
     }
 
     return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function toStringValue(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function toNumberValue(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+
+    return undefined;
 }
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
@@ -489,6 +521,265 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             },
             isDirty: markDirty,
         });
+    },
+
+    applyNodeRunOutputs: (nodeRuns) => {
+        if (!Array.isArray(nodeRuns) || nodeRuns.length === 0) {
+            return;
+        }
+
+        const byNodeId = new Map(nodeRuns.map((nodeRun) => [nodeRun.nodeId, nodeRun]));
+
+        set((state) => ({
+            nodes: state.nodes.map((node) => {
+                const nodeRun = byNodeId.get(node.id);
+                if (!nodeRun) {
+                    return node;
+                }
+
+                const outputs = nodeRun.outputs ?? {};
+                const error = nodeRun.errorMessage ?? undefined;
+                const basePatch: Partial<CustomNodeData> = {
+                    isExecuting: nodeRun.status === 'RUNNING',
+                    error,
+                };
+
+                switch (node.type) {
+                    case 'text':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                value:
+                                    toStringValue(outputs.value) ??
+                                    toStringValue(outputs.text) ??
+                                    toStringValue(node.data.value) ??
+                                    '',
+                            },
+                        };
+                    case 'upload_image':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                imageUrl:
+                                    toStringValue(outputs.imageUrl) ??
+                                    toStringValue(outputs.url) ??
+                                    toStringValue(node.data.imageUrl),
+                                assetId:
+                                    toStringValue(outputs.assetId) ??
+                                    toStringValue(node.data.assetId),
+                                mimeType:
+                                    toStringValue(outputs.mimeType) ??
+                                    toStringValue(node.data.mimeType),
+                                width:
+                                    toNumberValue(outputs.width) ??
+                                    toNumberValue(node.data.width),
+                                height:
+                                    toNumberValue(outputs.height) ??
+                                    toNumberValue(node.data.height),
+                            },
+                        };
+                    case 'upload_video':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                videoUrl:
+                                    toStringValue(outputs.videoUrl) ??
+                                    toStringValue(outputs.url) ??
+                                    toStringValue(node.data.videoUrl),
+                                assetId:
+                                    toStringValue(outputs.assetId) ??
+                                    toStringValue(node.data.assetId),
+                                mimeType:
+                                    toStringValue(outputs.mimeType) ??
+                                    toStringValue(node.data.mimeType),
+                                durationMs:
+                                    toNumberValue(outputs.durationMs) ??
+                                    toNumberValue(node.data.durationMs),
+                            },
+                        };
+                    case 'llm':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                response:
+                                    toStringValue(outputs.text) ??
+                                    toStringValue(outputs.response) ??
+                                    toStringValue(node.data.response),
+                            },
+                        };
+                    case 'crop_image':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                croppedUrl:
+                                    toStringValue(outputs.croppedUrl) ??
+                                    toStringValue(outputs.imageUrl) ??
+                                    toStringValue(node.data.croppedUrl),
+                            },
+                        };
+                    case 'extract_frame':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                extractedFrameUrl:
+                                    toStringValue(outputs.frameUrl) ??
+                                    toStringValue(outputs.extractedFrameUrl) ??
+                                    toStringValue(node.data.extractedFrameUrl),
+                            },
+                        };
+                    case 'generate_image':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                prompt:
+                                    toStringValue(outputs.prompt) ??
+                                    toStringValue(node.data.prompt),
+                                model:
+                                    toStringValue(outputs.model) ??
+                                    toStringValue(node.data.model),
+                                imageUrl:
+                                    toStringValue(outputs.imageUrl) ??
+                                    toStringValue(outputs.url) ??
+                                    toStringValue(node.data.imageUrl),
+                                assetId:
+                                    toStringValue(outputs.assetId) ??
+                                    toStringValue(node.data.assetId),
+                                publicId:
+                                    toStringValue(outputs.publicId) ??
+                                    toStringValue(node.data.publicId),
+                                provider:
+                                    toStringValue(outputs.provider) ??
+                                    toStringValue(node.data.provider),
+                                mimeType:
+                                    toStringValue(outputs.mimeType) ??
+                                    toStringValue(node.data.mimeType),
+                                bytes:
+                                    toNumberValue(outputs.bytes) ??
+                                    toNumberValue(node.data.bytes),
+                                width:
+                                    toNumberValue(outputs.width) ??
+                                    toNumberValue(node.data.width),
+                                height:
+                                    toNumberValue(outputs.height) ??
+                                    toNumberValue(node.data.height),
+                            },
+                        };
+                    case 'export_text':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                text:
+                                    toStringValue(outputs.text) ??
+                                    toStringValue(outputs.value) ??
+                                    toStringValue(node.data.text) ??
+                                    toStringValue(node.data.value),
+                                value:
+                                    toStringValue(outputs.value) ??
+                                    toStringValue(outputs.text) ??
+                                    toStringValue(node.data.value) ??
+                                    toStringValue(node.data.text),
+                                format:
+                                    toStringValue(outputs.format) === 'txt'
+                                        ? 'txt'
+                                        : (node.data.format as 'txt' | undefined),
+                            },
+                        };
+                    case 'export_image':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                imageUrl:
+                                    toStringValue(outputs.imageUrl) ??
+                                    toStringValue(outputs.url) ??
+                                    toStringValue(node.data.imageUrl),
+                                assetId:
+                                    toStringValue(outputs.assetId) ??
+                                    toStringValue(node.data.assetId),
+                                publicId:
+                                    toStringValue(outputs.publicId) ??
+                                    toStringValue(node.data.publicId),
+                                provider:
+                                    toStringValue(outputs.provider) ??
+                                    toStringValue(node.data.provider),
+                                mimeType:
+                                    toStringValue(outputs.mimeType) ??
+                                    toStringValue(node.data.mimeType),
+                                bytes:
+                                    toNumberValue(outputs.bytes) ??
+                                    toNumberValue(node.data.bytes),
+                                width:
+                                    toNumberValue(outputs.width) ??
+                                    toNumberValue(node.data.width),
+                                height:
+                                    toNumberValue(outputs.height) ??
+                                    toNumberValue(node.data.height),
+                            },
+                        };
+                    case 'export_video':
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                                videoUrl:
+                                    toStringValue(outputs.videoUrl) ??
+                                    toStringValue(outputs.url) ??
+                                    toStringValue(node.data.videoUrl),
+                                assetId:
+                                    toStringValue(outputs.assetId) ??
+                                    toStringValue(node.data.assetId),
+                                publicId:
+                                    toStringValue(outputs.publicId) ??
+                                    toStringValue(node.data.publicId),
+                                provider:
+                                    toStringValue(outputs.provider) ??
+                                    toStringValue(node.data.provider),
+                                mimeType:
+                                    toStringValue(outputs.mimeType) ??
+                                    toStringValue(node.data.mimeType),
+                                bytes:
+                                    toNumberValue(outputs.bytes) ??
+                                    toNumberValue(node.data.bytes),
+                                width:
+                                    toNumberValue(outputs.width) ??
+                                    toNumberValue(node.data.width),
+                                height:
+                                    toNumberValue(outputs.height) ??
+                                    toNumberValue(node.data.height),
+                                durationMs:
+                                    toNumberValue(outputs.durationMs) ??
+                                    toNumberValue(node.data.durationMs),
+                            },
+                        };
+                    default:
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                ...basePatch,
+                            },
+                        };
+                }
+            }),
+        }));
     },
 
     resetWorkflow: () => {

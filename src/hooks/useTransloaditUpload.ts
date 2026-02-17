@@ -8,6 +8,7 @@ import type { TransloaditResultFile } from '@/lib/transloadit-results';
 
 const POLL_DELAY_MS = 1500;
 const MAX_POLL_ATTEMPTS = 40;
+const MAX_POLL_TOTAL_MS = 120_000;
 
 export interface TransloaditUploadMeta {
     provider: 'transloadit' | 'cloudinary';
@@ -213,7 +214,15 @@ export function useTransloaditUpload({
             };
 
             const resolveViaApi = async (assemblyId: string): Promise<ResolveApiSuccess> => {
+                const startedAt = Date.now();
+
                 for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
+                    if (Date.now() - startedAt >= MAX_POLL_TOTAL_MS) {
+                        throw new Error(
+                            'Timed out while waiting for Transloadit result. The assembly did not reach a successful terminal state in time.'
+                        );
+                    }
+
                     const response = await fetch(
                         `/api/transloadit/resolve?assemblyId=${encodeURIComponent(assemblyId)}&type=${resolvedUploadType}`,
                         {
@@ -239,6 +248,17 @@ export function useTransloaditUpload({
                     if (response.status === 202 && code === 'ASSEMBLY_IN_PROGRESS') {
                         await delay(POLL_DELAY_MS);
                         continue;
+                    }
+
+                    if (
+                        response.status === 409 &&
+                        (code === 'ASSEMBLY_TERMINAL_FAILURE' || code === 'ASSEMBLY_UNKNOWN_STATUS')
+                    ) {
+                        const message =
+                            isResolveApiError(payload) && typeof payload.message === 'string'
+                                ? payload.message
+                                : 'Transloadit assembly did not complete successfully.';
+                        throw new Error(message);
                     }
 
                     if (response.status === 422 && (code === 'VIDEO_RESULT_NOT_VIDEO' || code === 'IMAGE_RESULT_NOT_IMAGE')) {
@@ -268,7 +288,9 @@ export function useTransloaditUpload({
                     throw new Error(message ?? 'Failed to resolve Transloadit result');
                 }
 
-                throw new Error('Timed out while waiting for Transloadit result');
+                throw new Error(
+                    'Timed out while waiting for Transloadit result. The assembly may still be in progress.'
+                );
             };
 
             uppy.use(Transloadit, {

@@ -3,10 +3,9 @@ import { AssetType } from '@prisma/client';
 import { withErrorHandler, WorkflowError } from '@/lib/error-handler';
 import { getCurrentUserOrThrow } from '@/lib/current-user';
 import { prisma } from '@/lib/prisma';
-import { isCloudinaryConfigured, uploadRemoteToCloudinary } from '@/lib/cloudinary';
+import { persistDurableAssetFromUrl } from '@/lib/assets';
 import { buildTransloaditApiAuthHeaders } from '@/lib/transloadit';
 import {
-    isCloudinaryUrl,
     resolveAssemblyOutput,
     TransloaditAssemblyLike,
 } from '@/lib/transloadit-results';
@@ -16,39 +15,27 @@ const querySchema = z.object({
     type: z.enum(['image', 'video']),
 });
 
-const TRANSLOADIT_TERMINAL_OK_STATES = new Set([
+const TRANSLOADIT_SUCCESS_STATES = new Set([
     'ASSEMBLY_COMPLETED',
+]);
+const TRANSLOADIT_IN_PROGRESS_STATES = new Set([
+    'ASSEMBLY_UPLOADING',
+    'ASSEMBLY_EXECUTING',
+    'ASSEMBLY_IMPORTING',
+    'ASSEMBLY_WAITING',
+]);
+const TRANSLOADIT_TERMINAL_FAILURE_STATES = new Set([
     'REQUEST_ABORTED',
     'ASSEMBLY_CANCELED',
     'ASSEMBLY_EXECUTION_REJECTED',
+    'ASSEMBLY_ABORTED',
 ]);
 const TRANSLOADIT_RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_ASSEMBLY_FETCH_ATTEMPTS = 3;
+const RETRY_AFTER_MS = 1500;
 
 function toAssetType(uploadType: 'image' | 'video'): AssetType {
     return uploadType === 'video' ? AssetType.VIDEO : AssetType.IMAGE;
-}
-
-function buildMimeType(input: {
-    uploadType: 'image' | 'video';
-    existingMimeType?: string;
-    resourceType?: string;
-    format?: string;
-}): string | undefined {
-    if (input.existingMimeType) {
-        return input.existingMimeType;
-    }
-
-    const normalizedResourceType = input.resourceType?.toLowerCase();
-    if (normalizedResourceType === 'video' && input.format) {
-        return `video/${input.format.toLowerCase()}`;
-    }
-
-    if (normalizedResourceType === 'image' && input.format) {
-        return `image/${input.format.toLowerCase()}`;
-    }
-
-    return input.uploadType === 'video' ? 'video/mp4' : 'image/jpeg';
 }
 
 async function fetchAssemblyWithRetry(endpoint: string): Promise<Response> {
@@ -150,70 +137,57 @@ export const GET = withErrorHandler(async (request: Request) => {
         throw new WorkflowError('Invalid assembly payload', 'ASSEMBLY_INVALID_PAYLOAD', 502);
     }
 
-    const status = payload.ok;
-    const isTerminal = typeof status === 'string' && TRANSLOADIT_TERMINAL_OK_STATES.has(status);
-    if (!isTerminal) {
+    const status = typeof payload.ok === 'string' ? payload.ok : undefined;
+    const isSuccess = typeof status === 'string' && TRANSLOADIT_SUCCESS_STATES.has(status);
+    const isInProgress =
+        !status || TRANSLOADIT_IN_PROGRESS_STATES.has(status);
+    const isTerminalFailure =
+        (typeof status === 'string' && TRANSLOADIT_TERMINAL_FAILURE_STATES.has(status)) ||
+        Boolean(payload.error);
+
+    if (isTerminalFailure) {
+        return Response.json(
+            {
+                code: 'ASSEMBLY_TERMINAL_FAILURE',
+                assemblyId: parsed.assemblyId,
+                status: status ?? null,
+                message:
+                    (typeof payload.message === 'string' && payload.message) ||
+                    (typeof payload.error === 'string' && payload.error) ||
+                    'Transloadit assembly failed before producing a valid output.',
+            },
+            { status: 409 }
+        );
+    }
+
+    if (!isSuccess && isInProgress) {
         return Response.json(
             {
                 code: 'ASSEMBLY_IN_PROGRESS',
                 assemblyId: parsed.assemblyId,
                 status: status ?? null,
+                retryAfterMs: RETRY_AFTER_MS,
             },
             { status: 202 }
         );
     }
 
+    if (!isSuccess) {
+        return Response.json(
+            {
+                code: 'ASSEMBLY_UNKNOWN_STATUS',
+                assemblyId: parsed.assemblyId,
+                status: status ?? null,
+                message: 'Assembly reached an unknown non-success state.',
+            },
+            { status: 409 }
+        );
+    }
+
     const resolved = resolveAssemblyOutput(payload, parsed.type, { allowTemp: true });
     if (resolved.output) {
-        const sourceUrl = resolved.output.url;
-
-        if (isCloudinaryUrl(sourceUrl)) {
-            const existingByUrl = await prisma.asset.findFirst({
-                where: {
-                    provider: 'cloudinary',
-                    url: sourceUrl,
-                },
-            });
-
-            const persistedAsset =
-                existingByUrl ??
-                (await prisma.asset.create({
-                    data: {
-                        userId: user.id,
-                        type: toAssetType(parsed.type),
-                        url: sourceUrl,
-                        provider: 'cloudinary',
-                        assemblyId: parsed.assemblyId,
-                        mimeType: resolved.output.mimeType,
-                    },
-                }));
-
-            return Response.json(
-                {
-                    assemblyId: parsed.assemblyId,
-                    url: sourceUrl,
-                    mimeType: resolved.output.mimeType,
-                    outputType: resolved.output.outputType ?? parsed.type,
-                    isTempUrl: false,
-                    sourceStep: resolved.output.sourceStep,
-                    sourceGroup: resolved.output.sourceGroup,
-                    provider: 'cloudinary',
-                    assetId: persistedAsset.id,
-                },
-                { status: 200 }
-            );
-        }
-
-        if (!isCloudinaryConfigured()) {
-            throw new WorkflowError(
-                'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.',
-                'CLOUDINARY_NOT_CONFIGURED',
-                500
-            );
-        }
-
         if (process.env.NODE_ENV !== 'production') {
-            console.info('[TRANSLOADIT_RESOLVE] copying result to cloudinary', {
+            console.info('[TRANSLOADIT_RESOLVE] persisting result', {
                 assemblyId: parsed.assemblyId,
                 sourceStep: resolved.output.sourceStep,
                 sourceGroup: resolved.output.sourceGroup,
@@ -221,66 +195,26 @@ export const GET = withErrorHandler(async (request: Request) => {
             });
         }
 
-        const uploaded = await uploadRemoteToCloudinary({
-            sourceUrl,
+        const durable = await persistDurableAssetFromUrl({
+            userId: user.id,
             uploadType: parsed.type,
+            sourceUrl: resolved.output.url,
             assemblyId: parsed.assemblyId,
+            existingMimeType: resolved.output.mimeType,
         });
-
-        if (process.env.NODE_ENV !== 'production') {
-            console.info('[TRANSLOADIT_RESOLVE] copied to cloudinary', {
-                assemblyId: parsed.assemblyId,
-                publicId: uploaded.publicId,
-                url: uploaded.url,
-            });
-        }
-
-        const existingByUrl = await prisma.asset.findFirst({
-            where: {
-                provider: 'cloudinary',
-                url: uploaded.url,
-            },
-        });
-
-        const persistedAsset =
-            existingByUrl ??
-            (await prisma.asset.create({
-                data: {
-                    userId: user.id,
-                    type: toAssetType(parsed.type),
-                    url: uploaded.url,
-                    provider: 'cloudinary',
-                    assemblyId: parsed.assemblyId,
-                    mimeType: buildMimeType({
-                        uploadType: parsed.type,
-                        existingMimeType: resolved.output.mimeType,
-                        resourceType: uploaded.resourceType,
-                        format: uploaded.format,
-                    }),
-                    bytes: uploaded.bytes,
-                    width: uploaded.width,
-                    height: uploaded.height,
-                    durationMs: uploaded.durationMs,
-                },
-            }));
 
         return Response.json(
             {
                 assemblyId: parsed.assemblyId,
-                url: uploaded.url,
-                mimeType: buildMimeType({
-                    uploadType: parsed.type,
-                    existingMimeType: resolved.output.mimeType,
-                    resourceType: uploaded.resourceType,
-                    format: uploaded.format,
-                }),
+                url: durable.url,
+                mimeType: durable.mimeType,
                 outputType: parsed.type,
                 isTempUrl: false,
                 sourceStep: 'cloudinary',
                 sourceGroup: 'cloudinary',
                 provider: 'cloudinary',
-                assetId: persistedAsset.id,
-                publicId: uploaded.publicId,
+                assetId: durable.asset.id,
+                publicId: durable.publicId,
             },
             { status: 200 }
         );

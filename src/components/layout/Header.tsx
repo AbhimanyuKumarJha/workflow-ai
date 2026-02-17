@@ -26,6 +26,7 @@ export function Header() {
     const exportJSON = useWorkflowStore((state) => state.exportJSON);
     const importJSON = useWorkflowStore((state) => state.importJSON);
     const applySnapshot = useWorkflowStore((state) => state.applySnapshot);
+    const applyNodeRunOutputs = useWorkflowStore((state) => state.applyNodeRunOutputs);
     const nodes = useWorkflowStore((state) => state.nodes);
     const isSaving = useWorkflowStore((state) => state.isSaving);
     const isDirty = useWorkflowStore((state) => state.isDirty);
@@ -155,6 +156,7 @@ export function Header() {
 
             if (payload?.run) {
                 addRun(payload.run);
+                applyNodeRunOutputs(payload.run.nodeRuns ?? []);
             }
 
             if (payload?.runId) {
@@ -218,6 +220,7 @@ export function Header() {
 
             if (payload?.run) {
                 addRun(payload.run);
+                applyNodeRunOutputs(payload.run.nodeRuns ?? []);
             }
             if (payload?.runId) {
                 setActiveRunId(payload.runId);

@@ -17,6 +17,10 @@ enum NodeType {
   LLM
   CROP_IMAGE
   EXTRACT_FRAME
+  GENERATE_IMAGE
+  EXPORT_TEXT
+  EXPORT_IMAGE
+  EXPORT_VIDEO
 }
 
 enum RunScope {

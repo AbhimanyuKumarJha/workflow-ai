@@ -53,6 +53,29 @@ export const HANDLE_REGISTRY: HandleRegistry = {
         timestamp: 'text',
         output: 'image',
     },
+
+    // Generate Image node - accepts text prompt and optional image references, outputs image
+    generate_image: {
+        prompt: 'text',
+        reference_a: 'image',
+        reference_b: 'image',
+        output: 'image',
+    },
+
+    // Export Text node - accepts text and terminates branch
+    export_text: {
+        text: 'text',
+    },
+
+    // Export Image node - accepts image and terminates branch
+    export_image: {
+        image: 'image',
+    },
+
+    // Export Video node - accepts video and terminates branch
+    export_video: {
+        video: 'video',
+    },
 };
 
 /**
