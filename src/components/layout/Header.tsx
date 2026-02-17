@@ -1,11 +1,12 @@
 ﻿'use client';
 
 import { useState, useMemo } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { UserButton } from '@clerk/nextjs';
 import {
+    ArrowLeft,
     Download,
     FlaskConical,
-    PanelLeftClose,
     PanelRightClose,
     Play,
     Save,
@@ -19,6 +20,9 @@ import { sampleWorkflow } from '@/lib/sample-workflow';
 import { useHistoryStore } from '@/stores/history-store';
 
 export function Header() {
+    const router = useRouter();
+    const pathname = usePathname();
+
     const workflowId = useWorkflowStore((state) => state.workflowId);
     const workflowName = useWorkflowStore((state) => state.workflowName);
     const setWorkflowName = useWorkflowStore((state) => state.setWorkflowName);
@@ -31,9 +35,7 @@ export function Header() {
     const isSaving = useWorkflowStore((state) => state.isSaving);
     const isDirty = useWorkflowStore((state) => state.isDirty);
 
-    const leftSidebarOpen = useUIStore((state) => state.leftSidebarOpen);
     const rightSidebarOpen = useUIStore((state) => state.rightSidebarOpen);
-    const toggleLeftSidebar = useUIStore((state) => state.toggleLeftSidebar);
     const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
 
     const addRun = useHistoryStore((state) => state.addRun);
@@ -42,6 +44,7 @@ export function Header() {
 
     const [isEditingName, setIsEditingName] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
+    const isWorkflowEditorPage = pathname?.startsWith('/workflow/') ?? false;
 
     // Track selected nodes for "Run Selected" feature
     const selectedNodeIds = useMemo(
@@ -239,19 +242,27 @@ export function Header() {
         }
     };
 
+    const handleBack = () => {
+        if (window.history.length > 1) {
+            router.back();
+            return;
+        }
+
+        router.push('/workflow');
+    };
+
     return (
         <header className="h-16 border-b border-gray-800 bg-gray-900 flex items-center justify-between px-4">
             <div className="flex items-center gap-4 min-w-0">
-                <button
-                    onClick={toggleLeftSidebar}
-                    className="p-2 hover:bg-gray-800 rounded transition-colors"
-                    title={leftSidebarOpen ? 'Close left sidebar' : 'Open left sidebar'}
-                >
-                    <PanelLeftClose
-                        size={20}
-                        className={`transition-transform ${!leftSidebarOpen ? 'rotate-180' : ''}`}
-                    />
-                </button>
+                {isWorkflowEditorPage && (
+                    <button
+                        onClick={handleBack}
+                        className="p-2 hover:bg-gray-800 rounded transition-colors"
+                        title="Back to workflows"
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+                )}
 
                 <div className="flex items-center gap-2 shrink-0">
                     <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center">
@@ -260,34 +271,37 @@ export function Header() {
                     <span className="text-xl font-bold text-white hidden sm:block">Weavy</span>
                 </div>
 
-                <div className="min-w-0">
-                    {isEditingName ? (
-                        <input
-                            type="text"
-                            value={workflowName}
-                            onChange={(event) => setWorkflowName(event.target.value)}
-                            onBlur={() => setIsEditingName(false)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' || event.key === 'Escape') {
-                                    setIsEditingName(false);
-                                }
-                            }}
-                            autoFocus
-                            className="bg-gray-800 text-white px-3 py-1 rounded border border-gray-700 focus:outline-none focus:border-purple-500 w-64 max-w-[45vw]"
-                        />
-                    ) : (
-                        <button
-                            onClick={() => setIsEditingName(true)}
-                            className="text-white hover:text-purple-300 transition-colors px-3 py-1 hover:bg-gray-800 rounded truncate max-w-[45vw]"
-                            title={workflowName}
-                        >
-                            {workflowName}
-                        </button>
-                    )}
-                </div>
+                {isWorkflowEditorPage && (
+                    <div className="min-w-0">
+                        {isEditingName ? (
+                            <input
+                                type="text"
+                                value={workflowName}
+                                onChange={(event) => setWorkflowName(event.target.value)}
+                                onBlur={() => setIsEditingName(false)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === 'Escape') {
+                                        setIsEditingName(false);
+                                    }
+                                }}
+                                autoFocus
+                                className="bg-gray-800 text-white px-3 py-1 rounded border border-gray-700 focus:outline-none focus:border-purple-500 w-64 max-w-[45vw]"
+                            />
+                        ) : (
+                            <button
+                                onClick={() => setIsEditingName(true)}
+                                className="text-white hover:text-purple-300 transition-colors px-3 py-1 hover:bg-gray-800 rounded truncate max-w-[45vw]"
+                                title={workflowName}
+                            >
+                                {workflowName}
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
 
-            <div className="flex items-center gap-2">
+            {isWorkflowEditorPage ? (
+                <div className="flex items-center gap-2">
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
@@ -348,7 +362,10 @@ export function Header() {
                     <Play size={16} />
                     <span className="hidden sm:inline">{isExecuting ? 'Running...' : 'Run'}</span>
                 </button>
-            </div>
+                </div>
+            ) : (
+                <div />
+            )}
 
             <div className="flex items-center gap-2">
                 <UserButton
@@ -359,16 +376,18 @@ export function Header() {
                     }}
                 />
 
-                <button
-                    onClick={toggleRightSidebar}
-                    className="p-2 hover:bg-gray-800 rounded transition-colors"
-                    title={rightSidebarOpen ? 'Close right sidebar' : 'Open right sidebar'}
-                >
-                    <PanelRightClose
-                        size={20}
-                        className={`transition-transform ${!rightSidebarOpen ? 'rotate-180' : ''}`}
-                    />
-                </button>
+                {isWorkflowEditorPage && (
+                    <button
+                        onClick={toggleRightSidebar}
+                        className="p-2 hover:bg-gray-800 rounded transition-colors"
+                        title={rightSidebarOpen ? 'Close right sidebar' : 'Open right sidebar'}
+                    >
+                        <PanelRightClose
+                            size={20}
+                            className={`transition-transform ${!rightSidebarOpen ? 'rotate-180' : ''}`}
+                        />
+                    </button>
+                )}
             </div>
         </header>
     );

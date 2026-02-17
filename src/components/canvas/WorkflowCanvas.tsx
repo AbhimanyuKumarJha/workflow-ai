@@ -377,7 +377,8 @@ function WorkflowCanvasInner() {
                     showZoom
                     showFitView
                     showInteractive
-                    className="bg-gray-800 border border-gray-700"
+                    position="bottom-left"
+                    className="workflow-controls text-black"
                 />
                 <MiniMap
                     nodeColor={(node) => {

@@ -92,6 +92,45 @@
     @apply bg-background-secondary;
   }
 
+  .react-flow__controls.workflow-controls-dark {
+    background-color: #000000;
+    border: 1px solid #111827;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .workflow-controls-dark .react-flow__controls-button {
+    background-color: #000000;
+    color: #ffffff;
+    width: 42px;
+    height: 38px;
+    border-bottom: 0;
+    border-right: 1px solid #1f2937;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .workflow-controls-dark .react-flow__controls-button:last-child {
+    border-right: 0;
+  }
+
+  .workflow-controls-dark .react-flow__controls-button:hover {
+    background-color: #111827;
+  }
+
+  .workflow-controls-dark .react-flow__controls-button svg {
+    width: 16px;
+    height: 16px;
+    stroke: #ffffff;
+    fill: none;
+    stroke-width: 1.75;
+  }
+
   .react-flow__minimap {
     @apply bg-background-secondary border border-border rounded-lg;
   }
