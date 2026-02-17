@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback } from 'react';
 import { NodeProps, Position } from '@xyflow/react';
@@ -26,7 +26,6 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
     const timestampConnected = edges.some((e) => e.target === id && e.targetHandle === 'timestamp');
 
     const isExecuting = nodeData.isExecuting || executingNodes.has(id);
-
     const handleTimestampChange = useCallback(
         (e: React.ChangeEvent<HTMLInputElement>) => {
             updateNodeData(id, { timestamp: e.target.value });

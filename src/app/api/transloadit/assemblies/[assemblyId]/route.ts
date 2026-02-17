@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { withErrorHandler, WorkflowError } from '@/lib/error-handler';
 import { getCurrentUserOrThrow } from '@/lib/current-user';
+import { buildTransloaditApiAuthHeaders } from '@/lib/transloadit';
 
 const paramsSchema = z.object({
     assemblyId: z.string().trim().min(1),
@@ -17,6 +18,7 @@ export const GET = withErrorHandler(async (_request: Request, context: { params:
         method: 'GET',
         headers: {
             Accept: 'application/json',
+            ...buildTransloaditApiAuthHeaders(),
         },
         cache: 'no-store',
     });

@@ -40,7 +40,6 @@ export function CropImageNode({ id, data, selected }: NodeProps) {
     );
 
     const isExecuting = nodeData.isExecuting || executingNodes.has(id);
-
     const handleInputChange = useCallback(
         (field: keyof CropImageNodeData, value: number) => {
             updateNodeData(id, { [field]: value });

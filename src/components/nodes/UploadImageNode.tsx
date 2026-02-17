@@ -24,12 +24,24 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
         onSuccess: (url, meta) => {
             const mimeType = meta?.mimeType ?? 'image/jpeg';
             const assemblyId = meta?.assemblyId;
+            const assetId = meta?.assetId;
+            const publicId = meta?.publicId;
+            const provider = meta?.provider;
+            const outputType = meta?.outputType;
+            const sourceStep = meta?.sourceStep;
+            const isTempUrl = meta?.isTempUrl;
 
             if (typeof meta?.width === 'number' && typeof meta?.height === 'number') {
                 updateNodeData(id, {
                     imageUrl: url,
+                    assetId,
+                    publicId,
+                    provider,
                     assemblyId,
                     mimeType,
+                    outputType,
+                    sourceStep,
+                    isTempUrl,
                     width: meta.width,
                     height: meta.height,
                 });
@@ -41,15 +53,31 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
             img.onload = () => {
                 updateNodeData(id, {
                     imageUrl: url,
+                    assetId,
+                    publicId,
+                    provider,
                     assemblyId,
                     mimeType,
+                    outputType,
+                    sourceStep,
+                    isTempUrl,
                     width: img.width,
                     height: img.height,
                 });
                 setIsUploading(false);
             };
             img.onerror = () => {
-                updateNodeData(id, { imageUrl: url, assemblyId, mimeType });
+                updateNodeData(id, {
+                    imageUrl: url,
+                    assetId,
+                    publicId,
+                    provider,
+                    assemblyId,
+                    mimeType,
+                    outputType,
+                    sourceStep,
+                    isTempUrl,
+                });
                 setIsUploading(false);
             };
             img.src = url;
@@ -93,8 +121,13 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
         updateNodeData(id, {
             imageUrl: undefined,
             assetId: undefined,
+            publicId: undefined,
+            provider: undefined,
             assemblyId: undefined,
             mimeType: undefined,
+            outputType: undefined,
+            sourceStep: undefined,
+            isTempUrl: undefined,
             width: undefined,
             height: undefined,
         });
@@ -133,7 +166,7 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
                             onError={() =>
                                 updateNodeData(id, {
                                     error:
-                                        'Image URL loaded from Transloadit could not be displayed in browser. Check URL access policy/CORP settings.',
+                                        'Uploaded image URL exists, but preview could not be rendered in browser.',
                                 })
                             }
                         />

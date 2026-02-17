@@ -42,6 +42,21 @@ function getTemplateId(uploadType: TransloaditUploadType): string | undefined {
     );
 }
 
+export function buildTransloaditApiAuthHeaders(): Record<string, string> {
+    const authKey =
+        process.env.TRANSLOADIT_AUTH_KEY ?? process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY;
+    const authSecret = process.env.TRANSLOADIT_AUTH_SECRET;
+
+    if (!authKey || !authSecret) {
+        return {};
+    }
+
+    const token = Buffer.from(`${authKey}:${authSecret}`).toString('base64');
+    return {
+        Authorization: `Basic ${token}`,
+    };
+}
+
 export function buildSignedAssemblyOptions(uploadType: TransloaditUploadType): SignedAssemblyOptions {
     const authKey =
         process.env.TRANSLOADIT_AUTH_KEY ?? process.env.NEXT_PUBLIC_TRANSLOADIT_AUTH_KEY;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { NodeProps, Position } from '@xyflow/react';
 import { Video, Upload, X, Loader2 } from 'lucide-react';
 import { BaseNode, CustomHandle } from './BaseNode';
@@ -25,8 +25,14 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
         onSuccess: (url, meta) => {
             updateNodeData(id, {
                 videoUrl: url,
+                assetId: meta?.assetId,
+                publicId: meta?.publicId,
+                provider: meta?.provider,
                 assemblyId: meta?.assemblyId,
                 mimeType: meta?.mimeType ?? 'video/mp4',
+                outputType: meta?.outputType,
+                sourceStep: meta?.sourceStep,
+                isTempUrl: meta?.isTempUrl,
                 durationMs: meta?.durationMs,
             });
             setIsUploading(false);
@@ -70,8 +76,13 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
         updateNodeData(id, {
             videoUrl: undefined,
             assetId: undefined,
+            publicId: undefined,
+            provider: undefined,
             assemblyId: undefined,
             mimeType: undefined,
+            outputType: undefined,
+            sourceStep: undefined,
+            isTempUrl: undefined,
             durationMs: undefined,
             thumbnailUrl: undefined,
         });
@@ -126,7 +137,7 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
                             onError={() =>
                                 updateNodeData(id, {
                                     error:
-                                        'Video URL loaded from Transloadit could not be played in browser. Check URL access policy/CORP settings.',
+                                        'Uploaded video URL exists, but preview could not be played in browser.',
                                 })
                             }
                         />
